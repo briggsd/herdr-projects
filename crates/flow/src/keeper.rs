@@ -183,6 +183,7 @@ pub fn keeper_work() -> i32 {
         // The board inside the herdr web UI: its front door is seen to here, every half minute (webui/keep.rs).
         if due("front-door", 30000) { crate::webui::keep::ensure_door(); }
         if live == 0 { return 3; } // every herdr it knows is gone
+        crate::runner::reap();
         std::thread::sleep(std::time::Duration::from_millis(1000));
     }
 }

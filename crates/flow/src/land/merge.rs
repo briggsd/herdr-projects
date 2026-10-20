@@ -198,11 +198,12 @@ pub fn land_core(id: &str, g: &mut Guard) -> Res<()> {
     }
 }
 
-/// The squash commit's title and body (local patch): the message of `head`'s last commit that is not a merge, with
+/// The squash commit's title and body (local patch): the message of `head`'s last commit that is not a merge, on the
+/// branch's own line (`--first-parent`: not main's commits that a catch-up merge brought in), with
 /// the pull request's closing lines ("Closes #n") put before its trailers so the issue still closes, and " (#n)" after
 /// the title as GitHub's own title has. None when there is no such commit, so the merge falls back to the repo default.
 fn squash_message(root: &Path, head: &str, pr: &str) -> Option<(String, String)> {
-    let full = git_out(root, &["log", "-1", "--no-merges", "--format=%B", head]).ok()?;
+    let full = git_out(root, &["log", "-1", "--first-parent", "--no-merges", "--format=%B", head]).ok()?;
     let full = full.trim();
     let (title, rest) = full.split_once('\n').unwrap_or((full, ""));
     let title = title.trim();

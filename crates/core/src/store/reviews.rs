@@ -75,6 +75,11 @@ pub fn passed_review(t: &Task) -> Option<(Value, String, i64)> {
     review.del("stale");
     Some((Value::Object(review), last.t("head"), last.i("round")))
 }
+/// The last commit a review stood on: the commit the last review looked at, or where it was last kept since. "" for none.
+pub fn last_reviewed(t: &Task) -> String {
+    let Some(e) = review_history(t).into_iter().rev().find(|e| !e.b("error") && e.b("head")) else { return String::new() };
+    e.arr("kept").iter().rev().map(|k| k.t("head")).find(|h| !h.is_empty()).unwrap_or_else(|| e.t("head"))
+}
 /// A review that still stands after main was merged in is written on the review it belongs to, each time.
 pub fn log_kept(t: &mut Task, k: &Value) {
     keep_saved_review(t);
@@ -87,9 +92,11 @@ pub fn log_kept(t: &mut Task, k: &Value) {
     last.put("kept", kept);
     t.put("reviews", reviews);
 }
-/// "re-merged with main, tests pass, review 2 still stands"; "a chat changed no code, review 2 still stands"
+/// "re-merged with main, tests pass, review 2 still stands"; "a chat changed no code, review 2 still stands";
+/// "no code changed since review 2 passed, tests pass, it still stands"
 pub fn kept_words(k: &Value, round: i64) -> String {
     if k.b("chat") { return format!("a chat changed no code, review{} still stands", if round > 0 { format!(" {round}") } else { String::new() }); }
+    if k.b("same") { return format!("no code changed since review{} passed, {}, it still stands", if round > 0 { format!(" {round}") } else { String::new() }, if k.b("check") { "tests pass" } else { "no check is set" }); }
     let n = k.arr("resolved").len();
     format!("re-merged with main{}, {}, review{} still stands",
         if n > 0 { format!(" (conflicts resolved in {n} file{})", if n == 1 { "" } else { "s" }) } else { String::new() },

@@ -11,7 +11,7 @@ use crate::gate;
 use crate::json::*;
 use crate::limits::reached::{stop_at, tokens_over, StopHow};
 use crate::runner::Guard;
-use crate::store::reviews::{log_kept, log_review, review_round};
+use crate::store::reviews::{last_reviewed, log_kept, log_review, review_round};
 use crate::store::settings::lookup::work;
 use crate::store::tasks::{get, one_line, Task};
 use crate::sync;
@@ -39,7 +39,13 @@ fn done(g: &mut Guard, t: &Task, msg: &str, review: Option<&Value>) -> Res<()> {
 pub fn after_review(c: Ctx, g: &mut Guard) -> Res<()> {
     let id = c.id;
     let mut t = g.check()?;
-    let change = if !c.tree.is_empty() && !c.research { flow::git::change_of(&t) } else { None };
+    let mut change = if !c.tree.is_empty() && !c.research { flow::git::change_of(&t) } else { None };
+    // A later round looks at what came after the commit the last review stood on (review_brief.rs).
+    let from = last_reviewed(&t);
+    if let (Some(o), false) = (change.as_mut().and_then(|x| x.as_object_mut()), from.is_empty()) {
+        let s = sync::since_review(c.tree, &from, &c.sync.map(|r| r.target.clone()).unwrap_or_default());
+        if s.b("ok") { o.insert("since".into(), s); }
+    }
     let to_land = change.as_ref().map(|ch| ch.b("stat")).unwrap_or(false);
     let ch = work(Some(&t));
     // Nothing to land: it is simply done, unless work outside a repo is reviewed too (review "always").

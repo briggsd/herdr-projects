@@ -36,8 +36,6 @@ pub fn keep(c: std::io::Result<std::process::Child>) -> u32 {
 pub fn reap() {
     if let Ok(mut k) = KEPT.lock() { k.retain_mut(|c| matches!(c.try_wait(), Ok(None))); }
 }
-/// How many held children have not been seen to end.
-pub fn kept() -> usize { KEPT.lock().map(|k| k.len()).unwrap_or(0) }
 /// Start a detached runner for one job on one task. Returns at once.
 pub fn spawn_runner(job: &str, id: &str, extra: &[&str]) -> u32 {
     if inline() { JOBS.with(|j| j.borrow_mut().push((job.into(), id.into(), extra.iter().map(|s| s.to_string()).collect()))); return 0; }

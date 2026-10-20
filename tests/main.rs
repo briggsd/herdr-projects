@@ -183,6 +183,7 @@ mod pull_requests_expected;
 mod pull_requests_merge;
 mod pull_requests_no_checks_permission;
 mod real_terminal;
+mod reap_children;
 mod rearm;
 mod rearm_stuck;
 mod remerge;

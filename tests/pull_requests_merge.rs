@@ -44,7 +44,7 @@ fn a_pull_request_only_merges_at_the_commit_that_was_reviewed_a_commit_pushed_fr
     assert_eq!(t.s("stage"), "approval"); assert!(!t.b("autoMerge")); assert_eq!(t.at("failure").s("title"), "Pull request could not merge");
     assert!(t.at("failure").s("detail").contains("Head branch was modified"), "{}", t.at("failure"));
     assert_eq!(looks(), looked + 2);
-    assert!(gh_log(&w).contains(&format!("pr merge 7 --squash --match-head-commit {reviewed}\n")), "{}", gh_log(&w));
+    assert!(gh_log(&w).contains(&format!("pr merge 7 --squash --match-head-commit {reviewed} --subject v1 (#7) --body \n")), "{}", gh_log(&w));
     assert!(!regex::Regex::new("--auto|--delete-branch").unwrap().is_match(&gh_log(&w)));
     assert!(Path::new(t.s("worktree")).exists()); assert!(!t.b("tidy"));
     // checks still running: remembered. Someone pushes to the pull request meanwhile: the approval is withdrawn

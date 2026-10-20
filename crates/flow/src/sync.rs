@@ -5,8 +5,10 @@
 pub mod conflict;
 pub mod conflict_log;
 pub mod merge_only;
+pub mod since_review;
 pub use conflict::{conflict_back, conflict_failure, conflict_message};
 pub use merge_only::merge_only;
+pub use since_review::{nothing_to_look_at, since_review};
 use crate::flow::git::{has_origin, head_of};
 use crate::json::*;
 use crate::store::fetch;

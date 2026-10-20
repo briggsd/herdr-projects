@@ -29,7 +29,7 @@ pub fn review_brief(t: &Obj, b: &Brief) -> String {
             if b.to_land { "You are in the repository, on the branch with the change, with all your tools." } else { "You are in the folder where the work was done, with all your tools. There is no diff: find what the agent made or changed from what it says below." })
     };
     let evidence = if b.ch.b("review.evidence") { format!("Curate evidence that genuinely helps the human judge this work. Choose a small set of distinct, useful items (aim for at most six); no duplicates, scratch files, exhaustive output dumps, or decorative reports. A single navigable review page will combine the work summary, your verdict and only the evidence you explicitly list in your verdict. Do not make your own wrapper page. Each caption should name what matters; each detail should explain what that item proves, or how to try it.\n- Something with a screen (a page, an app, a game, a chart): screenshots of it working, and of anything broken.\n- Something that moves or is interactive: a short screen recording, if you are able to make one.\n- Something a person can use: a link to try it themselves.\n- Logic, a library, a script: the output of the tests or commands you ran, saved as a text file.\n- A tiny or obvious change (a typo, a rename, a one-line fix): no artifact is needed. Do not manufacture any.\nSave evidence files in {dir}/ (the board's own folder for this review, outside the folder you are in), using plain file names. Do not include secrets or private credentials in evidence.\n{share}") } else { String::new() };
-    let change_line = if b.to_land { let c = b.change.cloned().unwrap_or(Value::Null); format!("The change is everything on this branch since it started{}. The commit under review is {}. See all of it yourself, it is not pasted here: `git diff {}`", if c.b("stat") { format!(" ({})", c.s("stat")) } else { String::new() }, c.s("head"), c.s("range")) } else { String::new() };
+    let change_line = if b.to_land { let c = b.change.cloned().unwrap_or(Value::Null); format!("The change is everything on this branch since it started{}. The commit under review is {}. See all of it yourself, it is not pasted here: `git diff {}`{}", if c.b("stat") { format!(" ({})", c.s("stat")) } else { String::new() }, c.s("head"), c.s("range"), since_lines(c.at("since"), b.ch)) } else { String::new() };
     let later = if b.earlier.is_some() {
         format!("This is a later round: the agent was sent back with the findings of the round before, listed below. Your job now is narrower. Check that each one is fixed, and that the fixes broke nothing. Return each one that is still not fixed, with its `id`; leave out the ones that are fixed. You may add a new finding (with no id) only if it is critical. Anything smaller that you notice only now is left out: do not report it. The one exception is a fault that was already there before this change: report it, marked `preexisting`: it is a note for the human and never sends the work back.\n{}{}",
             if open.is_empty() { "Earlier findings: none of the task's own.".to_string() } else { format!("Earlier findings:\n{}", open.iter().map(|f| format!("- {} {}", f.s("id"), gate::finding_line(f))).collect::<Vec<_>>().join("\n")) },
@@ -52,6 +52,34 @@ pub fn review_brief(t: &Obj, b: &Brief) -> String {
         format!("You do not decide whether this {} or goes back, and you give no score: the board decides from your findings by a fixed rule. A critical finding with an empty proof is counted as major. If nothing qualifies, return an empty list and say so. Do not invent findings to have something to report.", if b.to_land { "merges" } else { "is accepted" }),
         later, verdict,
     ].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n\n")
+}
+/// A later round: only what came after the commit the last review stood on is reviewed (sync::since_review), plus
+/// the checks a repo names in `review.laterChecks`, which look at the head itself and not at a range.
+fn since_lines(s: &Value, ch: &Obj) -> String {
+    if !s.b("ok") { return String::new(); }
+    let short = |c: &str| c.chars().take(10).collect::<String>();
+    let from = s.t("from");
+    let look: Vec<&Value> = s.arr("merges").iter().filter(|m| m.b("look")).collect();
+    let skipped = s.arr("merges").len() - look.len();
+    let mut out = if s.arr("own").is_empty() && s.arr("other").is_empty() && look.is_empty() {
+        format!("\n\nThe last review stood on {}, and nothing that wants a look came after it{}. Check the earlier findings against the commit under review; do not review the rest of the branch again.", short(&from), if skipped > 0 { format!(" (only {skipped} clean merge{} of main)", if skipped == 1 { "" } else { "s" }) } else { String::new() })
+    } else {
+        let mut l = format!("\n\nEarlier rounds reviewed the branch up to {}. Review only what came after it; do not review the rest of the branch again, beyond what checking the earlier findings needs:", short(&from));
+        if !s.arr("own").is_empty() { l.push_str(&format!("\n- the agent's own {} since then: `git log -p --first-parent --no-merges {from}..{}`", if s.arr("own").len() == 1 { "commit" } else { "commits" }, s.t("head"))); }
+        for c in s.arr("other") { l.push_str(&format!("\n- the merge {} of something other than main: all it brought in is new, `git diff {}^1 {}`", short(&text(c)), text(c), text(c))); }
+        for m in &look {
+            let mut why = vec![];
+            if !m.arr("conflicts").is_empty() { why.push(format!("its conflicts were resolved by hand in {}", m.arr("conflicts").iter().map(text).collect::<Vec<_>>().join(", "))); }
+            if !m.arr("extra").is_empty() { why.push(format!("it changes more than its conflicts needed: {}", m.arr("extra").iter().map(text).collect::<Vec<_>>().join(", "))); }
+            if !m.arr("touches").is_empty() { why.push(format!("main's side changes files this change changes too: {}", m.arr("touches").iter().map(text).collect::<Vec<_>>().join(", "))); }
+            l.push_str(&format!("\n- the merge of main {} ({}): `git show --remerge-diff {}` shows what was done by hand, `git diff {}^1 {}` what main brought", short(m.s("commit")), why.join("; "), m.s("commit"), m.s("commit"), m.s("commit")));
+        }
+        if skipped > 0 { l.push_str(&format!("\n{skipped} other merge{} of main went through clean and touch{} none of the change's files: the check covered {}.", if skipped == 1 { "" } else { "s" }, if skipped == 1 { "es" } else { "" }, if skipped == 1 { "it" } else { "them" })); }
+        l
+    };
+    let checks = ch.s("review.laterChecks").trim();
+    if !checks.is_empty() && checks != "none" { out.push_str(&format!("\n\nWhatever the range, also check these on the commit under review: they live in the head, not in the diff.\n{checks}")); }
+    out
 }
 /// The board's rules applied to whatever the reviewer wrote. None: a verdict for another commit (ignored).
 pub fn parse_verdict(raw: &str, head: &str, earlier: Option<&[Value]>, used: &[String]) -> Res<Option<Obj>> {

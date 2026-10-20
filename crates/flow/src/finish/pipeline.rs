@@ -84,18 +84,20 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
     }
     let sync_r = synced.or(own_sync.as_ref());
     if let Some(r) = sync_r { t = g.set(|t| { let p = sync::seen_patch(t, Some(r)); sync::apply(t, p); if r.status == "current" || r.status == "merged" { sync::conflict_log::conflict_repaired(t); } })?; }
-    // A clean update that touched none of the files the task changed leaves its review standing. So does work that
-    // passed its review and has only taken main in since (sync::merge_only is the rule): the check proves the result.
+    // Work that passed its review and has done nothing since that wants a look keeps that review: the check proves the
+    // result. So does a clean update that touched none of the files the task changed, whatever its review said.
     let mut kept: Option<Value> = None;
     let mut kept_how: Option<Value> = None;
-    if let Some(r) = sync_r { if r.status == "merged" && r.overlap.as_ref().map(|o| o.is_empty()).unwrap_or(false) && t.s("reviewedHead") == r.before { kept = current_review(&t).cloned(); if kept.is_some() { kept_how = Some(json!({ "from": r.before, "merges": 1, "resolved": [] })); } } }
-    if kept.is_none() && !check.is_empty() && !tree.is_empty() && ch.s("review.when") != "never" {
-        if let (Some(r), Some((review, head, _))) = (sync_r.filter(|r| !r.target.is_empty()), passed_review(&t)) {
-            let m = sync::merge_only(&tree, &head, &r.target);
-            // Where the task merges with nobody's yes, only the board's own clean merge of main stands in for a review.
-            if m.b("ok") && !(!m.arr("resolved").is_empty() && super::auto_merge::merges_itself(&t)) { kept = Some(review); kept_how = Some(json!({ "from": m.at("from"), "merges": m.at("merges"), "resolved": m.at("resolved") })); }
+    if !check.is_empty() && !tree.is_empty() && ch.s("review.when") != "never" {
+        // Nothing since the passed review wants a look (sync::since_review is the rule): no commit at all (a turn on pull
+        // request feedback that changed no code), or only merges of main that went through clean and apart from the
+        // change's files. A merge with conflicts, or one whose main side touches those files, is reviewed, on its own.
+        if let Some((review, head, _)) = passed_review(&t) {
+            let s = sync::since_review(&tree, &head, &sync_r.map(|r| r.target.clone()).unwrap_or_default());
+            if sync::nothing_to_look_at(&s) { kept = Some(review); kept_how = Some(json!({ "from": head, "merges": s.arr("merges").len(), "resolved": [], "same": s.arr("merges").is_empty() })); }
         }
     }
+    if let (None, Some(r)) = (&kept, sync_r) { if r.status == "merged" && r.overlap.as_ref().map(|o| o.is_empty()).unwrap_or(false) && t.s("reviewedHead") == r.before { kept = current_review(&t).cloned(); if kept.is_some() { kept_how = Some(json!({ "from": r.before, "merges": 1, "resolved": [] })); } } }
     if t.b("setupPending") && !setup.is_empty() {
         let alive = || g.check().is_ok();
         let s = sh(&setup, &folder, &env, 15.0, Some(&alive), None);
@@ -114,7 +116,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
         let (r, _) = run_check(g, id, &run.cmd, run.short(), &folder, &env, &root, ms(ch.s("check.timeout")) as f64 / 60000.0)?;
         if r.aborted { return Ok(()); }
         if !r.ok {
-            let merged = if kept.is_some() { " The branch was only re-merged with main since its review passed, so the tests ran instead of a new review." } else { "" };
+            let merged = match &kept_how { Some(k) if k.b("same") => " No code changed since its review passed, so the tests ran instead of a new review.", Some(_) => " The branch was only re-merged with main since its review passed, so the tests ran instead of a new review.", None => "" };
             let fails = get(id).map(|c| c.i("checkFails")).unwrap_or(0) + 1;
             let rounds = ch.i("review.rounds");
             let last = fails > rounds; // it goes back by itself `review.rounds` times

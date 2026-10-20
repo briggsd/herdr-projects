@@ -1,5 +1,6 @@
-//! Work that passed its review and then only took main in is not reviewed again: the tests run on the merged result and
-//! the review stands. Anything beyond the merge is reviewed as ever.
+//! Work that passed its review and then only took main in, clean and apart from its own files, is not reviewed again:
+//! the tests run on the merged result and the review stands. A merge with conflicts or into its files, and anything
+//! beyond the merge, is reviewed again (since_review.rs: only what came after the review).
 use crate::common;
 use common::*;
 use serde_json::json;
@@ -27,9 +28,9 @@ fn passed() -> (World, String, String) {
 }
 
 #[test]
-fn main_merged_cleanly_into_the_tasks_own_file_after_a_passing_review_the_tests_run_no_new_review() {
+fn main_merged_cleanly_apart_from_the_tasks_files_after_a_passing_review_the_tests_run_no_new_review() {
     let (w, id, reviewed) = passed();
-    let main = main_moves(&w, &[("big.txt", &big("line 1", "MAIN"))]);
+    let main = main_moves(&w, &[("other.txt", "MAIN\n")]);
     let t = resync(&w, &id);
     assert_eq!(t.s("stage"), "approval", "{}", t.at("failure")); assert!(holds(t.s("worktree"), &main));
     assert_eq!(t.i("reviewRound"), 1); assert_eq!(review_history(&t).len(), 1, "the tag keeps showing the review that passed");
@@ -42,27 +43,38 @@ fn main_merged_cleanly_into_the_tasks_own_file_after_a_passing_review_the_tests_
     assert_eq!(sw::actions::finish_line::details(&id).unwrap().at("reviews")[0].arr("kept").len(), 1);
     assert_eq!(prompts(&w, t.at("link").s("pane")).len(), 1, "the agent heard nothing");
     // main moves again: still measured from the commit the reviewer really saw, and written down again
-    main_moves(&w, &[("big.txt", &big("line 1", "MAIN AGAIN"))]);
+    main_moves(&w, &[("other.txt", "MAIN AGAIN\n")]);
     let u = resync(&w, &id);
     assert_eq!(u.s("stage"), "approval"); assert_eq!(u.i("reviewRound"), 1); assert_eq!(u.at("review").at("kept").i("merges"), 2); assert_eq!(u.at("review").at("kept").t("from"), reviewed);
     assert_eq!(review_history(&u)[0].arr("kept").len(), 2);
     sw::actions::finish_line::approve(&id, None, false).unwrap();
     assert_eq!(settle(&id).s("stage"), "done");
-    assert_eq!(read(&w.root.join("big.txt")), big("TASK", "MAIN AGAIN"));
+    assert_eq!(read(&w.root.join("big.txt")), big("TASK", "line 20")); assert_eq!(read(&w.root.join("other.txt")), "MAIN AGAIN\n");
 }
 
 #[test]
-fn a_conflict_the_agent_resolved_in_the_merge_and_nothing_more_the_tests_run_the_review_stands() {
+fn main_merged_cleanly_into_the_tasks_own_file_after_a_passing_review_is_reviewed_again() {
+    let (w, id, reviewed) = passed();
+    let main = main_moves(&w, &[("big.txt", &big("line 1", "MAIN"))]);
+    let t = resync(&w, &id);
+    assert_eq!(t.s("stage"), "approval", "{}", t.at("failure")); assert!(holds(t.s("worktree"), &main));
+    assert_eq!(t.i("reviewRound"), 2, "main's side touched big.txt, which the task changed"); assert!(!t.at("review").b("keptAt"));
+    let s = sw::sync::since_review(t.s("worktree"), &reviewed, &main);
+    assert_eq!(s.arr("merges")[0].at("touches"), &json!(["big.txt"]));
+}
+
+#[test]
+fn a_conflict_the_agent_resolved_in_the_merge_is_reviewed_again() {
     let (w, id, reviewed) = passed();
     let main = main_moves(&w, &[("big.txt", &big("MAIN", "line 20"))]);
     w.script(json!({ "worker": [{ "merge": main, "files": { "big.txt": big("TASK and MAIN", "line 20") }, "commit": "resolve", "note": "Resolved." }] }));
     let t = resync(&w, &id);
     assert_eq!(t.s("stage"), "approval", "{}", t.at("failure")); assert!(holds(t.s("worktree"), &main));
     let last = prompts(&w, t.at("link").s("pane")).last().cloned().unwrap_or_default();
-    assert!(last.contains("already passed its review: change only the conflicting files"), "{last}");
-    assert_eq!(t.i("reviewRound"), 1); assert_eq!(review_history(&t).len(), 1); assert!(t.at("review").b("keptAt")); assert!(!t.at("review").b("stale"));
-    assert_eq!((t.at("review").at("kept").t("from"), t.at("review").at("kept").at("resolved").clone()), (reviewed, json!(["big.txt"])));
-    assert!(t.s("msg").contains("Re-merged with main (conflicts resolved in 1 file), tests pass, review 1 still stands."), "{}", t.s("msg"));
+    assert!(last.contains("already passed its review: change only the conflicting files, in that one merge commit, and the next review looks at that merge alone"), "{last}");
+    assert_eq!(t.i("reviewRound"), 2); assert_eq!(review_history(&t).len(), 2); assert!(!t.at("review").b("keptAt"));
+    let s = sw::sync::since_review(t.s("worktree"), &reviewed, &main);
+    assert!(s.arr("own").is_empty()); assert_eq!(s.arr("merges")[0].at("conflicts"), &json!(["big.txt"]));
 }
 
 #[test]
@@ -96,7 +108,7 @@ fn more_than_the_merge_needed_is_reviewed_again_a_file_that_did_not_conflict_or_
 #[test]
 fn tests_that_fail_on_the_re_merged_branch_go_back_to_the_agent_as_a_failed_check_does_its_fix_is_reviewed() {
     let (w, id, _) = passed();
-    main_moves(&w, &[("big.txt", &big("line 1", "MAIN")), ("broken.txt", "breaks the check\n")]);
+    main_moves(&w, &[("other.txt", "MAIN\n"), ("broken.txt", "breaks the check\n")]);
     w.script(json!({ "worker": [{ "note": null, "status": "working" }] }));
     let t = resync(&w, &id);
     assert_eq!(t.s("stage"), "working"); assert_eq!(t.at("failure").s("title"), "Check failed"); assert_eq!(t.i("reviewRound"), 1);

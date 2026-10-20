@@ -25,7 +25,7 @@ pub fn conflict_message(t: &Obj, tree: &str, r: &Synced) -> String {
     let files: Vec<String> = r.files.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).map(|f| format!("- {f}")).collect();
     format!("Your branch {0} conflicts with {1}, so this is not done yet.\n\nConflicting files:\n{2}\n\nTarget commit: {3} ({1})\n\nIn your own worktree ({tree}), merge that commit into {0}, resolve the conflicts, commit, and finish again. The board's own merge attempt was rolled back, so your branch is as you left it. Do not touch the human's checkout.{4}{5}",
         t.s("branch"), r.base, files.join("\n"), r.target,
-        if passed_before(t) { " Your work already passed its review: change only the conflicting files, in that one merge commit, and the board reruns the tests instead of reviewing everything again. Anything more is reviewed again." } else { "" },
+        if passed_before(t) { " Your work already passed its review: change only the conflicting files, in that one merge commit, and the next review looks at that merge alone instead of everything again." } else { "" },
         if t.b("mergeIntent") { " The human already approved this merge: after your repair the board checks, reviews and merges it; do not push or merge it yourself." } else { "" })
 }
 /// The conflict goes straight back to the task's agent, as the board's own turn (so an approved merge survives the

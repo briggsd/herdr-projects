@@ -130,10 +130,18 @@ pub fn land_core(id: &str, g: &mut Guard) -> Res<()> {
         gh(&["pr", "ready", &pr], &root, 60000);
         // GitHub's own checks on it (`merge.checks`): still running it waits, failed it goes back (checks.rs).
         if !super::checks::before_merge(id, g, &t, &root)? { return Ok(()); }
+        // A squash takes its message from the branch's last commit that is not a merge (local patch, see
+        // squash_message); without one, GitHub's repo default (the pull request's title and body) as before.
+        let message = if how == "squash" {
+            squash_message(&root, if reviewed.is_empty() { t.s("branch") } else { reviewed.as_str() }, &pr)
+        } else {
+            None
+        };
         let mut a = vec!["pr", "merge", pr.as_str()];
         let how_flag = format!("--{how}");
         a.push(&how_flag);
         if !reviewed.is_empty() { a.extend(["--match-head-commit", reviewed.as_str()]); }
+        if let Some((subject, body)) = &message { a.extend(["--subject", subject.as_str(), "--body", body.as_str()]); }
         let m = gh(&a, &root, 120000);
         if m.status != 0 {
             // GitHub's checks are still running, or a required review is missing: the approval is remembered.
@@ -188,4 +196,43 @@ pub fn land_core(id: &str, g: &mut Guard) -> Res<()> {
         Err(e) if is_aborted(&e) => Err(e),
         Err(e) => fail(g, "Merge failed", &e.msg, "Investigate the Git error in your own worktree, then finish again. Approve again only after the problem is fixed.", Fail::default()),
     }
+}
+
+/// The squash commit's title and body (local patch): the message of `head`'s last commit that is not a merge, with
+/// the pull request's closing lines ("Closes #n") put before its trailers so the issue still closes, and " (#n)" after
+/// the title as GitHub's own title has. None when there is no such commit, so the merge falls back to the repo default.
+fn squash_message(root: &Path, head: &str, pr: &str) -> Option<(String, String)> {
+    let full = git_out(root, &["log", "-1", "--no-merges", "--format=%B", head]).ok()?;
+    let full = full.trim();
+    let (title, rest) = full.split_once('\n').unwrap_or((full, ""));
+    let title = title.trim();
+    if title.is_empty() { return None; }
+    let view = gh(&["pr", "view", pr, "--json", "body", "-q", ".body"], root, 60000);
+    let closes: Vec<&str> = if view.status == 0 { view.stdout.lines().map(str::trim).filter(|l| is_closing(l)).collect() } else { Vec::new() };
+    let lines: Vec<&str> = rest.trim().lines().collect();
+    let cut = lines.iter().rposition(|l| !is_trailer(l)).map_or(0, |i| i + 1);
+    let mut body = lines[..cut].join("\n").trim().to_string();
+    if !closes.is_empty() && !closes.iter().all(|c| body.contains(c)) {
+        body.push_str("\n\n");
+        body.push_str(&closes.join("\n"));
+    }
+    if cut < lines.len() {
+        body.push_str("\n\n");
+        body.push_str(lines[cut..].join("\n").trim());
+    }
+    Some((format!("{title} (#{pr})"), body.trim().to_string()))
+}
+
+/// A line GitHub reads as closing an issue: "Closes #12", "fixes owner/repo#3" and the like.
+fn is_closing(line: &str) -> bool {
+    let l = line.to_ascii_lowercase();
+    ["close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved"].iter().any(|k| {
+        l.strip_prefix(k).and_then(|r| r.strip_prefix(' ')).map_or(false, |r| r.trim_start().contains('#'))
+    })
+}
+
+/// A git trailer this keeps at the end of the body.
+fn is_trailer(line: &str) -> bool {
+    let l = line.to_ascii_lowercase();
+    l.starts_with("co-authored-by:") || l.starts_with("signed-off-by:")
 }

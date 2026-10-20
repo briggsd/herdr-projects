@@ -20,6 +20,24 @@ pub fn detach(c: &mut Command) {
     use std::os::unix::process::CommandExt;
     unsafe { c.pre_exec(|| { libc::setsid(); Ok(()) }); }
 }
+/// The detached children this process started and has not waited for (local patch). A detached child is still this
+/// process's child, so one that ends stays a zombie until it is waited for; the keeper's worker, the board and the page
+/// server live for days and start one every few seconds. `keep` holds each, and `reap` waits for the ended ones.
+static KEPT: std::sync::Mutex<Vec<std::process::Child>> = std::sync::Mutex::new(Vec::new());
+/// Hold a detached child to be reaped later, reaping the ended ones first. Returns its pid, or 0 when it did not start.
+pub fn keep(c: std::io::Result<std::process::Child>) -> u32 {
+    reap();
+    let Ok(ch) = c else { return 0 };
+    let id = ch.id();
+    if let Ok(mut k) = KEPT.lock() { k.push(ch); }
+    id
+}
+/// Wait for the held children that have ended; the rest are kept.
+pub fn reap() {
+    if let Ok(mut k) = KEPT.lock() { k.retain_mut(|c| matches!(c.try_wait(), Ok(None))); }
+}
+/// How many held children have not been seen to end.
+pub fn kept() -> usize { KEPT.lock().map(|k| k.len()).unwrap_or(0) }
 /// Start a detached runner for one job on one task. Returns at once.
 pub fn spawn_runner(job: &str, id: &str, extra: &[&str]) -> u32 {
     if inline() { JOBS.with(|j| j.borrow_mut().push((job.into(), id.into(), extra.iter().map(|s| s.to_string()).collect()))); return 0; }
@@ -32,7 +50,7 @@ pub fn spawn_runner(job: &str, id: &str, extra: &[&str]) -> u32 {
     for k in DROP_ENV { c.env_remove(k); }
     match log { Ok(f) => { let f2 = f.try_clone().ok(); c.stdout(f); if let Some(f2) = f2 { c.stderr(f2); } } Err(_) => { c.stdout(Stdio::null()).stderr(Stdio::null()); } }
     detach(&mut c);
-    c.spawn().map(|ch| ch.id()).unwrap_or(0)
+    keep(c.spawn())
 }
 /// Tests drain the jobs that would have been detached.
 pub fn drain_jobs(run: &dyn Fn(&str, &str, &[String])) {
@@ -50,7 +68,7 @@ pub fn detached_sh(cmd: &str, env: &[(&str, String)]) {
     c.args(["-c", cmd]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     for (k, v) in env { c.env(k, v); }
     detach(&mut c);
-    let _ = c.spawn();
+    keep(c.spawn());
 }
 pub fn runner_alive(t: &Task) -> bool { marker_alive(t.at("runner")) }
 fn mine(m: &Value) -> bool { m.i("pid") == std::process::id() as i64 }

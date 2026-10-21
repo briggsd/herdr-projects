@@ -15,9 +15,10 @@ use sw::json::*;
 /// `noLogin`: gh is not logged in where it runs (a keeper started without the login shell's GH_TOKEN): every call fails.
 /// `prs`: the pull requests GitHub has for a head branch (`pr list --head`), each { number, url, state }; none by
 /// default. `archived`: the repo is archived on GitHub (`repo view`). `labels`: an issue's labels (`issue view`);
-/// `issueFail`: gh cannot read the issue.
+/// `issueFail`: gh cannot read the issue. `labelsLater: { after, labels }`: the issue's labels from its `after`+1th look
+/// on (a label put on mid-task). `editFail`: gh cannot change the pull request (`pr edit`).
 #[derive(Default)]
-pub struct FakeGh { pub cfg: RefCell<Value>, pub log: RefCell<Vec<String>>, pub merged: Cell<bool>, late: Cell<i64> }
+pub struct FakeGh { pub cfg: RefCell<Value>, pub log: RefCell<Vec<String>>, pub merged: Cell<bool>, late: Cell<i64>, views: Cell<i64> }
 fn ok(out: &str) -> GhOut { GhOut { status: 0, stdout: if out.is_empty() { String::new() } else { format!("{out}\n") }, stderr: String::new() } }
 fn rows(v: &Value) -> String { v.as_array().map(|a| a.iter().map(|r| strings(r).join("\t")).collect::<Vec<_>>().join("\n")).unwrap_or_default() }
 fn fail(m: &str) -> GhOut { GhOut { status: 1, stdout: String::new(), stderr: format!("{m}\n") } }
@@ -79,7 +80,11 @@ impl FakeGh {
             // How many of the repo's last pull requests had checks: `others`.
             ("pr", "list") if has("--head") => ok(&if c.at("prs").is_array() { c.at("prs").to_string() } else { "[]".into() }),
             ("pr", "list") => ok(&c.i("others").to_string()),
-            ("issue", "view") => if c.b("issueFail") { fail("HTTP 502") } else { ok(&strings(c.at("labels")).join("\n")) },
+            ("issue", "view") => {
+                let n = self.views.get(); self.views.set(n + 1);
+                if c.b("issueFail") { fail("HTTP 502") } else if c.at("labelsLater").is_object() && n >= c.at("labelsLater").i("after") { ok(&strings(c.at("labelsLater").at("labels")).join("\n")) } else { ok(&strings(c.at("labels")).join("\n")) }
+            }
+            ("pr", "edit") => if c.b("editFail") { fail("HTTP 422: could not add label") } else { ok("") },
             ("repo", "view") => ok(if c.b("archived") { "true" } else { "false" }),
             ("run", "view") => if c.b("log") { ok(c.s("log")) } else { fail("log not found") },
             _ => fail(&format!("fake gh: unknown {}", a.join(" "))),

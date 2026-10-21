@@ -147,6 +147,8 @@ pub fn after_review(c: Ctx, g: &mut Guard) -> Res<()> {
     let stat = change.as_ref().map(|x| x.at("stat").clone()).unwrap_or(Value::Null);
     t = g.set(|t| { t.put("review", review.clone().unwrap_or(Value::Null)); t.put("stat", stat.clone()); t.put("reviewedHead", head_v.clone()); t.put("mergeFailed", false); })?;
     if hold_pr_failure(g, &t)? { return Ok(()); }
+    // At the gate, by you or by itself: issue labels put on mid-task reach the pull request first (pr.copyLabels).
+    super::pr_labels::copy(id, g, c.root);
     // A task that merges by itself (`merge.by`, read now) still wants a review that passed the gate.
     let skip = c.sync.map(|s| !sync::held_why(s).is_empty()).unwrap_or(false);
     if by_itself(&t) && !t.b("requireApproval") && !t.b("chat") && !skip && (!review_needed || (review.is_some() && passed)) {

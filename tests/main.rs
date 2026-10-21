@@ -197,6 +197,7 @@ mod remote_more;
 mod remote_open;
 mod remote_why;
 mod research;
+mod pr_labels;
 mod research_more;
 mod research_rest;
 mod research_setting;

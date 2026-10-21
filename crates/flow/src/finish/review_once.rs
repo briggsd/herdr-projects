@@ -51,6 +51,7 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     // another reviewer on the task. A routed review's last resort (review_fallback.rs) holds for its own round only.
     let last_resort = t.i("reviewLastResort");
     let held = t.b("reviewerOn") && !(last_resort > 0 && round > last_resort);
+    if plan.is_none() { super::pr_labels::copy(id, g, &if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) }); }
     let routed = if plan.is_none() && !held && stand_in.is_empty() { super::review_route::route(&t, ch, &if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) }, round) } else { super::review_route::Route { agent: None, why: String::new() } };
     if let Some(a) = &routed.agent { now_agent = a.clone(); }
     let on = agent_of(&now_agent);

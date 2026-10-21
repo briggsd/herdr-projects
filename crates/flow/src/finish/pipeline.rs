@@ -217,7 +217,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
             Ok(Some(url))
         })();
         match pushed {
-            Ok(Some(url)) => note = format!(" Pull request: {url}"),
+            Ok(Some(url)) => { note = format!(" Pull request: {url}"); super::pr_labels::copy(id, g, &root); }
             Ok(None) => {}
             Err(e) if is_aborted(&e) => return Err(e),
             Err(_) if already::archived(Path::new(&tree)) => { fail(g, already::archived_failure(t.s("branch"), &tree), FailHow::default())?; return Ok(()); }

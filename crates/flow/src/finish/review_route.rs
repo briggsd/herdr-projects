@@ -14,9 +14,8 @@ use std::path::Path;
 /// The routed reviewer, if any, and why (for the runner.log line); `why` is "" when no labels are set.
 pub struct Route { pub agent: Option<String>, pub why: String }
 
-pub fn route(t: &Obj, ch: &Obj, root: &Path, round: i64) -> Route {
-    let has = issue_labels(t, ch, root);
-    let r = by_label(ch, &has);
+pub fn route(ch: &Obj, has: &Issue, round: i64) -> Route {
+    let r = by_label(ch, has);
     if r.agent.is_some() { return r; }
     if let Some(p) = has.as_ref().ok().and_then(|(_, l)| super::review_pace::pace(ch, l)) { return p; }
     if round < 2 { return r; }
@@ -29,17 +28,19 @@ pub fn route(t: &Obj, ch: &Obj, root: &Path, round: i64) -> Route {
     Route { agent: Some(a), why: "round 2+".into() }
 }
 
-/// The issue's number and labels, asked of gh only when a label setting wants them; Err: why not ("" for not wanted).
-fn issue_labels(t: &Obj, ch: &Obj, root: &Path) -> Result<(u64, Vec<String>), String> {
+/// The task's issue: its number and labels, or why not ("" when no setting asked).
+pub type Issue = Result<(u64, Vec<String>), String>;
+/// The issue's number and labels, asked of gh only when one of the label settings `keys` is set.
+pub fn issue_labels(t: &Obj, ch: &Obj, root: &Path, keys: &[&str]) -> Issue {
     let set = |k: &str| list_of(ch.at(k)).into_iter().any(|l| l != "none");
-    if !set("reviewer.byLabel") && !set("reviewer.codexPace") { return Err(String::new()); }
+    if !keys.iter().any(|k| set(k)) { return Err(String::new()); }
     let Some(n) = super::closes::issue_of(t, root) else { return Err("no issue".into()) };
     let r = crate::flow::git::gh(&["issue", "view", &n.to_string(), "--json", "labels", "-q", ".labels[].name"], root, 30000);
     if r.status != 0 { return Err(format!("gh failed on #{n}: {}", r.stderr.lines().next().unwrap_or("").trim())); }
     Ok((n, r.stdout.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()))
 }
 
-fn by_label(ch: &Obj, issue: &Result<(u64, Vec<String>), String>) -> Route {
+fn by_label(ch: &Obj, issue: &Issue) -> Route {
     let keep = |why: String| Route { agent: None, why };
     let labels: Vec<String> = list_of(ch.at("reviewer.byLabel")).into_iter().filter(|l| l != "none").collect();
     if labels.is_empty() { return keep(String::new()); }

@@ -51,9 +51,19 @@ pub fn start_agent(id: &str, g: &mut Guard, prompt: &str, resume: Option<&str>) 
     let worker = start::role_of("worker", &|n| w.at(n).clone());
     let who = if plan::planner(&t) { let wr = t.at("plan").at("writer"); start::Role { kind: wr.t("kind"), model: wr.t("model"), effort: String::new(), fast: false, access: worker.access.clone(), instructions: worker.instructions.clone() } } else { worker.clone() };
     let took = agent_of(if plan::planner(&t) { "" } else { t.s("on") });
-    let model = if took.kind == kind { took.model } else if who.kind == kind { who.model.clone() } else { String::new() };
-    let level = start::effort_for(&kind, &model, &who.effort);
+    let mut model = if took.kind == kind { took.model } else if who.kind == kind { who.model.clone() } else { String::new() };
     let root = if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) };
+    // Claude on the model the issue's labels choose (finish/claude_model.rs), unless the task was handed to a model.
+    if !plan::planner(&t) && kind == "claude" && took.kind != kind {
+        let key = "worker.claudeModelByLabel";
+        let issue = crate::finish::review_route::issue_labels(&t, &w, &root, &[key]);
+        match crate::finish::claude_model::pick(&w, key, &issue) {
+            crate::finish::claude_model::Pick::Model { model: m, label } => { crate::finish::shared::runner_log(id, &format!("worker model: {m} ({label})")); model = m; }
+            crate::finish::claude_model::Pick::Failed(why) => crate::finish::shared::runner_log(id, &format!("worker model: default ({why})")),
+            crate::finish::claude_model::Pick::Default => {}
+        }
+    }
+    let level = start::effort_for(&kind, &model, &who.effort);
     installed::pre_trust(&kind, &root, &who.access);
     let taken: Vec<String> = api.agents().unwrap_or_default().iter().filter(|a| a.s("pane_id") != t.at("link").s("pane")).map(|a| a.t("name")).filter(|n| !n.is_empty()).collect();
     let name = agent_name(&t, &taken);

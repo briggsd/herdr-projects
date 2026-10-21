@@ -69,6 +69,13 @@ pub fn agent(f: &F, verb: &str, arg2: &str, argv: &[String], flag: &dyn Fn(&str)
         "prompt" => {
             if st["panes"][pi]["agent"].s("status") == "blocked" { return fail("agent_blocked", "agent is blocked"); }
             let typed = read_named(&argv.get(3).cloned().unwrap_or_default());
+            // A compact is the program's own command: no turn of the script; it can be made to stall (`compactFails`).
+            if typed.starts_with("/compact") {
+                if st.b("compactFails") { return fail("agent_prompt_stalled", "agent prompt produced no observed working or blocked state within 5000 ms; current status is idle"); }
+                F::bump(&mut st, pi, "working", false); F::bump(&mut st, pi, "idle", true);
+                let p = st["panes"][pi].clone();
+                return ok(json!({ "type": "agent_prompted", "agent": F::agent_out(&p) }));
+            }
             let box_ = st["panes"][pi]["agent"].at("box").clone();
             let text = if box_.is_string() { format!("{}\n{typed}", text_of(&box_)) } else { typed };
             if st["panes"][pi]["agent"].i("boot") > 0 || st.i("swallow") > 0 {

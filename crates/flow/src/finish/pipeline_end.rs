@@ -116,6 +116,7 @@ pub fn after_review(c: Ctx, g: &mut Guard) -> Res<()> {
     }
     if let Some(rv) = &review { if fresh && !passed && rounds < max {
         let mut stale = rv.as_object().cloned().unwrap_or_default(); stale.put("stale", true);
+        super::compact::before_fix(id, g, &t, rounds + 1)?;
         flow::send::send_own(id, &gate::review_message(rv, false), "review", t.b("mergeIntent"), obj(json!({ "review": stale, "reviewRounds": rounds + 1 })), 0)?;
         return Ok(());
     } }

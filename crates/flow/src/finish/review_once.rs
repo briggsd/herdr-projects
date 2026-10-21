@@ -51,19 +51,31 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     // another reviewer on the task. A routed review's last resort (review_fallback.rs) holds for its own round only.
     let last_resort = t.i("reviewLastResort");
     let held = t.b("reviewerOn") && !(last_resort > 0 && round > last_resort);
-    if plan.is_none() { super::pr_labels::copy(id, g, &if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) }); }
-    let routed = if plan.is_none() && !held && stand_in.is_empty() { super::review_route::route(&t, ch, &if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) }, round) } else { super::review_route::Route { agent: None, why: String::new() } };
+    let root = if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) };
+    if plan.is_none() { super::pr_labels::copy(id, g, &root); }
+    // The issue's labels, asked of gh once: who reviews (routed) and, for Claude, on which model.
+    let issue = if plan.is_none() { super::review_route::issue_labels(&t, ch, &root, &["reviewer.byLabel", "reviewer.codexPace", "reviewer.claudeModelByLabel"]) } else { Err(String::new()) };
+    let routed = if plan.is_none() && !held && stand_in.is_empty() { super::review_route::route(ch, &issue, round) } else { super::review_route::Route { agent: None, why: String::new() } };
     if let Some(a) = &routed.agent { now_agent = a.clone(); }
     let on = agent_of(&now_agent);
     let (mut rkind, mut rmodel, mut reffort, mut by) = (on.kind.clone(), on.model.clone(), if routed.agent.is_some() { String::new() } else { who.effort.clone() }, now_agent.clone());
     if !installed::installed(&rkind) && installed::installed(t.s("agent")) { rkind = t.t("agent"); rmodel = String::new(); reffort = String::new(); by = rkind.clone(); }
+    let (mut shown, mut why) = (by.clone(), routed.why.clone());
+    if plan.is_none() && rkind == "claude" {
+        let also = |why: &mut String, more: &str| if why.is_empty() { *why = more.to_string() } else if why != more { *why = format!("{why}; {more}") };
+        match super::claude_model::pick(ch, "reviewer.claudeModelByLabel", &issue) {
+            super::claude_model::Pick::Model { model, label } => { shown = format!("claude {model}"); rmodel = model; also(&mut why, &label); }
+            super::claude_model::Pick::Failed(e) => also(&mut why, &format!("default model: {e}")),
+            super::claude_model::Pick::Default => {}
+        }
+    }
     // A stand-in for a program that is not installed is a hand-over like any other.
     if !stand_in.is_empty() { g.set(|t| { let h = log_handover(t, "reviewer", ch.s("reviewer.agent"), &now_agent, &format!("{stand_in} is not installed here")); t.put("reviewerOn", now_agent.clone()); t.put("msg", handover_line(&h)); })?; }
     let other = by != ch.s("reviewer.agent");
     // From the second round on, the reviewer's own program may review at another effort (reviewer.laterEffort).
     let later = ch.t("reviewer.laterEffort");
     if round >= 2 && plan.is_none() && !other && !later.is_empty() && later != "same" { reffort = later; }
-    if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: reviewer {by}{}", if routed.why.is_empty() { String::new() } else { format!(" ({})", routed.why) })); }
+    if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: reviewer {shown}{}", if why.is_empty() { String::new() } else { format!(" ({why})") })); }
     if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: effort {}", if reffort.is_empty() { "default" } else { &reffort })); }
     let note = if let Some(a) = &routed.agent { Some(if routed.why.starts_with("round") { format!("reviewed by {a}: reviewer.laterAgent, from round 2") } else { format!("reviewed by {a}: the issue is {}", routed.why) }) } else if rkind != who.kind && !t.b("reviewerOn") && stand_in.is_empty() { Some(format!("reviewed by {rkind}: {} is not installed here", who.kind)) } else { None };
     let was = t.t("reviewSession"); // a review started again: the conversation of the try before is not this one's

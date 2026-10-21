@@ -66,6 +66,14 @@ its token use.
 none of the finish line runs. How an agent says so, and what the board does:
 [an agent that waits for you is not finished](waiting-for-you.md).
 
+**An agent that ended its turn with its own background job still running** (a check, a build, a test run it started
+and did not wait for) has not finished either. Nothing is committed, merged or moved on; the task's runner.log says
+`turn end held: <pid> <command>`, and the board tells the agent once to wait for that job (with the repo's own
+`tools/wait_for.sh` where it has one), then end its turn. The next turn's end with nothing left goes on as usual, its
+summary keeping what the held turn said. The program's own helpers (an MCP server or a language server it keeps between
+turns) do not count. After three holds in a row, or with a job running over an hour, the turn goes on anyway and
+runner.log says why, so a stuck job never holds a task for good.
+
 ### Without a hook
 
 A crash, a program older than its adapter's minimum version, another kind of agent, Codex when you have your own `notify`

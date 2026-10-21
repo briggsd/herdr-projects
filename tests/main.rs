@@ -186,6 +186,7 @@ mod pull_requests_no_checks_permission;
 mod real_terminal;
 mod reap_children;
 mod rearm;
+mod turn_hold;
 mod unprompted;
 mod rearm_stuck;
 mod remerge;

@@ -179,6 +179,8 @@ fn run(f: &F, pi: usize, prompt: &str, step: Value) {
     let mut st = f.st.borrow_mut();
     if step.b("session") { st["panes"][pi]["agent"]["session"] = step.at("session").clone(); }
     if step.b("screen") { st["panes"][pi]["agent"]["screen"] = step.at("screen").clone(); }
+    // `pane`: what runs in its pane when the turn ends (panes.rs: `tool`, a command it left running in the background).
+    for (k, v) in step.at("pane").as_object().cloned().unwrap_or_default() { st["panes"][pi][k.as_str()] = v; }
     if step.b("exit") { st["panes"][pi]["agent"] = Value::Null; return; }
     if step.at("then").is_object() { let a = &mut st["panes"][pi]["agent"]; a["then"] = step.at("then").clone(); a["thenIn"] = json!(if step.has("after") { step.i("after") } else { 3 }); }
     let status = if step.b("status") { step.t("status") } else { "done".into() };

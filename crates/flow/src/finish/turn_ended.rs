@@ -246,7 +246,8 @@ fn finish_steps(id: &str, g: &mut Guard, mut t: Task, ev: Option<Value>, force: 
     }
     // The task's tokens, counted now that the turn has ended: at its limit it stops here, with this turn's work kept.
     if let Some((limit, used)) = tokens_over(id, "agent") { stop_at(id, "tokens", &limit, used, StopHow::default()); return Ok(()); }
-    let _ = &t;
+    // Its own background jobs still run: held, and it is told to wait for them (finish/turn_hold.rs).
+    let Some(said) = super::turn_hold::hold(id, g, &t, &said, wake.b("keepIntent"))? else { return Ok(()) };
     if super::chat::after_turn(g)? { return Ok(()); } // a chat with reviewed work: kept as it was, or reviewed once you are done
     pipeline(id, g, &said, wake.b("keepIntent"), wake.s("reason"), None)
 }

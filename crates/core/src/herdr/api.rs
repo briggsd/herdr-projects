@@ -79,7 +79,7 @@ impl Herdr {
         a.extend(envs(env)); a.push("--no-focus".into());
         Ok(self.call(a)?.at("pane").clone())
     }
-    fn process_info(&self, id: &str) -> Option<Value> { self.call(args(&["pane", "process-info", "--pane", id])).ok().map(|r| r.at("process_info").clone()) }
+    pub(super) fn process_info(&self, id: &str) -> Option<Value> { self.call(args(&["pane", "process-info", "--pane", id])).ok().map(|r| r.at("process_info").clone()) }
     /// Is nothing but its shell running in the pane? Unknown counts as busy.
     pub fn pane_idle(&self, id: &str) -> bool {
         let Some(i) = self.process_info(id) else { return false };
@@ -109,20 +109,10 @@ impl Herdr {
     /// touched, nor anything in the foreground. Returns each signal sent: the pid, the signal, the command it ran.
     pub fn pane_reap(&self, id: &str, wait_ms: i64) -> Vec<(i64, &'static str, String)> {
         let Some(i) = self.process_info(id) else { return vec![] };
-        let front: Vec<i64> = i.arr("foreground_processes").iter().filter(|p| crate::gate::is_int(p.at("pid"))).map(|p| p.i("pid")).collect();
-        let shell = i.i("shell_pid");
-        let (mut strays, mut todo): (Vec<i64>, Vec<i64>) = (vec![], front.iter().copied().filter(|p| *p != shell).collect());
-        while let Some(pid) = todo.pop() {
-            for k in kids(pid).unwrap_or_default() { if !front.contains(&k) && k != shell && !strays.contains(&k) { strays.push(k); todo.push(k); } }
-        }
+        let (_, _, strays) = super::jobs::strays(&i);
         let fake = super::cli::fake();
         let alive = |pid: i64| fake.is_none() && unsafe { libc::kill(pid as i32, 0) } == 0;
-        let command = |pid: i64| -> String {
-            if fake.is_some() { return format!("process {pid}"); }
-            let o = std::process::Command::new("ps").args(["-o", "args=", "-p", &pid.to_string()]).output().ok();
-            o.map(|o| String::from_utf8_lossy(&o.stdout).trim().chars().take(200).collect()).unwrap_or_default()
-        };
-        let cmds: Vec<(i64, String)> = strays.iter().map(|p| (*p, command(*p))).collect(); // read before any of them ends
+        let cmds: Vec<(i64, String)> = strays.iter().map(|p| (*p, super::jobs::command_of(*p))).collect(); // read before any of them ends
         let mut sent = vec![];
         for (sig, name) in [(libc::SIGTERM, "TERM"), (libc::SIGKILL, "KILL")] {
             let left: Vec<i64> = if sig == libc::SIGTERM { strays.clone() } else { strays.iter().copied().filter(|p| alive(*p)).collect() };
@@ -286,3 +276,4 @@ pub fn read_screen(h: &Herdr, pane: &str, status: Option<&str>, lines: i64) -> S
         }
     }
 }
+

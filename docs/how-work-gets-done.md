@@ -328,6 +328,11 @@ itself, and its worktree and branch are removed. `workspace.cleanup false` keeps
   MCP servers is closed like any other. A command whose streams go elsewhere (the terminal, a file, `/dev/null`) keeps
   the space open, in the agent's group or not, and so does one in a group of its own. What cannot be told counts as a
   command.
+- With `workspace.reap` on, what a finished agent left running in the background (out of the terminal's foreground,
+  under the agent: a test, a build, a wait loop) is stopped instead of waited for: TERM, then KILL after 10 seconds,
+  with everything under it. Only once the task is done and its agent is idle; never a command in the foreground, nor
+  the pane's shell or its jobs. Stopping it may end in a last turn of the agent, and the space closes when that has
+  been quiet for a while, as after any turn.
 - Nor is one Herdr could not answer for, or whose Herdr session is not running: then nothing of the task is touched.
 - The clean-up is tried again by itself (about every half minute, board open or closed) and happens once the space is
   free. After a turn of the agent, only once that has been quiet for ten minutes. Work that appeared meanwhile is kept.

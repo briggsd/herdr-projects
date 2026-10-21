@@ -210,3 +210,32 @@ fn real_programs_a_helper_is_wired_to_the_agent_and_a_command_left_running_is_no
     for c in [&mut piped, &mut socket, &mut null, &mut logged] { let _ = c.kill(); let _ = c.wait(); }
     let _ = std::fs::remove_file(std::env::temp_dir().join(format!("hp-wired-{me}.log")));
 }
+
+#[test]
+fn with_reap_on_what_a_finished_agent_left_running_in_the_background_is_stopped_and_the_task_cleaned_up() {
+    let w = world_with(Opts { repo: true, settings: json!({ "review.when": "never" }), ..Default::default() });
+    w.patch(|s| s["killed"] = json!([]));
+    let killed = |w: &World| w.state().arr("killed").len();
+    // off (the built-in): left alone and waited for, as before
+    let t = merged(&w, 1, |t| pane(&w, t.at("link").s("pane"), |p| p["tool"] = json!(true)));
+    let id = t.t("id");
+    assert_eq!(pass(&w, &id), 1);
+    assert!(open_and_kept(&w, &t)); assert_eq!(killed(&w), 0);
+    // on: the next pass stops it (pid 2, the command under the agent, not the agent or the shell) and cleans up
+    sw::store::settings::change::set_value("workspace.reap", &json!(true), &sw::store::settings::lookup::Scope::you()).unwrap();
+    assert_eq!(pass(&w, &id), 1);
+    assert_eq!(w.state().arr("killed").to_vec(), [json!(2)]);
+    assert!(gone(&w, &t), "{}", kept(&task(&id)));
+    // a command in the agent's foreground (on the terminal) is not stopped: kept until it ends
+    let t = merged_with(&w, "child");
+    let (id, p) = (t.t("id"), t.at("link").t("pane"));
+    assert!(open_and_kept(&w, &t)); assert_eq!(w.state().arr("killed").len(), 1);
+    pane(&w, &p, |p| p["child"] = json!(false));
+    assert_eq!(pass(&w, &id), 1);
+    assert!(gone(&w, &t));
+    // an agent at work is never touched, whatever runs under it
+    let t = merged(&w, 3, |t| { pane(&w, t.at("link").s("pane"), |p| p["tool"] = json!(true)); status(&w, t, "working", false); });
+    let id = t.t("id");
+    pass(&w, &id); // a turn: put off for the quiet time, and then still at work
+    assert!(open_and_kept(&w, &t)); assert_eq!(w.state().arr("killed").len(), 1);
+}

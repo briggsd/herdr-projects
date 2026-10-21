@@ -26,6 +26,7 @@ pub struct Cleanup { pub kept: Vec<String>, pub retry: bool, pub turn: bool, pub
 pub struct Opts<'a> { pub delete_branch: &'a str, pub keep_unmerged: bool, pub still: Option<&'a dyn Fn() -> bool>, pub since: Option<Value>, pub first: Option<String> }
 pub fn cleanup(t: &Task, delete_branch: &str) -> Vec<String> { cleanup_with(t, Opts { delete_branch, keep_unmerged: false, still: None, since: None, first: None }).kept }
 fn still_ms() -> i64 { std::env::var("HERDR_PROJECTS_STILL_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(120000) }
+fn reap_ms() -> i64 { std::env::var("HERDR_PROJECTS_REAP_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(10000) }
 fn settle_ms() -> i64 { std::env::var("HERDR_PROJECTS_SETTLE_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(5000) }
 #[derive(Clone, Copy)]
 struct AgentNow { busy: bool, unknown: bool }
@@ -40,6 +41,7 @@ pub fn cleanup_with(t: &Task, o: Opts) -> Cleanup {
         match api.call(args(&["workspace", "get", link.s("workspace")])) { Ok(r) => ws = Some(r.at("workspace").clone()).filter(|w| w.is_object()), Err(e) => unknown = !e.code.contains("not_found") }
     }
     let still = o.still.is_some();
+    let reap = still && setting("workspace.reap", Some(t)) == json!(true);
     // False when herdr did not close it (a timeout): then it is still in the sidebar, and that is tried again.
     let close_space = || -> bool {
         let (Some(w), true, Some(api)) = (&ws, link.b("ownsWorkspace"), &api) else { return true };
@@ -73,7 +75,9 @@ pub fn cleanup_with(t: &Task, o: Opts) -> Cleanup {
                 *seen.borrow_mut() = a.at("completion_seq").clone();
                 let st = a.s("agent_status");
                 let busy = st == "working" || st == "blocked";
-                let unknown = if st == "idle" || st == "done" { !api.pane_childless(link.s("pane"), a.s("agent")) } else { !busy && !at_rest(&a) };
+                let childless = || api.pane_childless(link.s("pane"), a.s("agent"));
+                // `workspace.reap`: what a finished agent of a done task left running in the background is stopped, not waited for
+                let unknown = if st == "idle" || st == "done" { !childless() && !(reap && api.pane_reap(link.s("pane"), reap_ms()) > 0 && childless()) } else { !busy && !at_rest(&a) };
                 Some(AgentNow { busy, unknown })
             }
             Ok(None) => { *seen.borrow_mut() = Value::Null; None }

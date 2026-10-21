@@ -104,6 +104,32 @@ impl Herdr {
         if !crate::gate::is_int(i.at("shell_pid")) { return true; }
         kids(i.i("shell_pid")).map(|k| k.iter().all(|p| front.contains(p))).unwrap_or(false)
     }
+    /// Stop what the pane's agent left running in the background (out of the terminal's foreground, under its programs),
+    /// with all under it: TERM, then KILL what is left after `wait_ms`. The pane's shell and its own jobs are not
+    /// touched, nor anything in the foreground. Returns how many processes were signalled.
+    pub fn pane_reap(&self, id: &str, wait_ms: i64) -> usize {
+        let Some(i) = self.process_info(id) else { return 0 };
+        let front: Vec<i64> = i.arr("foreground_processes").iter().filter(|p| crate::gate::is_int(p.at("pid"))).map(|p| p.i("pid")).collect();
+        let shell = i.i("shell_pid");
+        let (mut strays, mut todo): (Vec<i64>, Vec<i64>) = (vec![], front.iter().copied().filter(|p| *p != shell).collect());
+        while let Some(pid) = todo.pop() {
+            for k in kids(pid).unwrap_or_default() { if !front.contains(&k) && k != shell && !strays.contains(&k) { strays.push(k); todo.push(k); } }
+        }
+        let fake = super::cli::fake();
+        let alive = |pid: i64| fake.is_none() && unsafe { libc::kill(pid as i32, 0) } == 0;
+        for sig in [libc::SIGTERM, libc::SIGKILL] {
+            let left: Vec<i64> = if sig == libc::SIGTERM { strays.clone() } else { strays.iter().copied().filter(|p| alive(*p)).collect() };
+            for pid in &left {
+                match &fake { Some(f) => f.kill(*pid), None if *pid > 1 => unsafe {
+                    if libc::getpgid(*pid as i32) == *pid as i32 { libc::kill(-(*pid as i32), sig); } // its own group: what it forked off goes too
+                    libc::kill(*pid as i32, sig);
+                }, None => {} }
+            }
+            let until = crate::clock::now() + wait_ms;
+            while crate::clock::now() < until && strays.iter().any(|p| alive(*p)) { std::thread::sleep(std::time::Duration::from_millis(200)); }
+        }
+        strays.len()
+    }
     /// A pane, with whatever runs in it, into a new tab of another space. Never focused.
     pub fn pane_move(&self, id: &str, workspace: &str, label: &str) -> HRes<Value> {
         let mut a = args(&["pane", "move", id, "--new-tab", "--workspace", workspace]);

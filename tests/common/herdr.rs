@@ -25,7 +25,8 @@ impl Fake for FakeHerdr {
     fn kids(&self, pid: i64) -> Vec<i64> { if pid != 1 { vec![] } else if self.st.borrow().arr("panes").iter().any(|p| p.b("child") || p.b("wrapped")) { vec![3] } else { vec![2] } }
     fn wired_to(&self, pid: i64, _group: &[i64]) -> Option<bool> { Some(pid == 2) }
     /// Ending a fake agent's process: its pane is at its shell again.
-    fn kill(&self, pid: i64) { for p in self.st.borrow_mut()["panes"].as_array_mut().unwrap() { if p.at("agent").i("pid") == pid { p["agent"] = Value::Null; } } }
+    /// pid 2 under a `tool` pane is the command it left running in the background: ended, it is no longer there.
+    fn kill(&self, pid: i64) { self.st.borrow_mut()["killed"].as_array_mut().map(|k| k.push(json!(pid))); for p in self.st.borrow_mut()["panes"].as_array_mut().unwrap() { if p.at("agent").i("pid") == pid { p["agent"] = Value::Null; } if pid == 2 && p.b("tool") { p["tool"] = json!(false); } } }
 }
 impl FakeHerdr {
     pub fn ws_out(st: &Value, w: &Value) -> Value {

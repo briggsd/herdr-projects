@@ -91,6 +91,11 @@ When the agent's turn ends, the board:
    ([below](#staying-current-with-main)), and **runs the repo's `check`**. A failure goes straight back to the agent,
    three tries.
 2. **Pushes the branch and opens a draft pull request**, when there is an `origin` remote and `gh`.
+   - Its body is the agent's closing message. When the task's description has the line "Implements GitHub issue
+     owner/repo#n (https://github.com/owner/repo/issues/n)" for the repo's own issue, and no line of the message is
+     exactly "Closes #n", that line goes in on its own: after the message's leading bullets, or else at the top. The
+     task's runner.log says "pr body: added Closes #n". Nothing else in the text names the issue: a number in a sentence,
+     a pull request or "the next stage of" an issue never does.
    - A pull request the agent already opened for the task's branch is taken on instead, and goes through the review and
      the merge as usual.
    - A branch that brings main nothing gets no pull request: no change was needed, or the work is on main already (the

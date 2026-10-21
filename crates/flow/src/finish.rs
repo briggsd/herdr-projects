@@ -10,6 +10,7 @@ pub mod hand_over;
 pub mod line;
 pub mod model_refused;
 pub mod old_holds;
+pub mod closes;
 pub mod pipeline;
 pub mod pipeline_end;
 pub mod recover_job;

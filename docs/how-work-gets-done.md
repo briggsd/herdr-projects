@@ -202,8 +202,15 @@ own worktree:
   every task waiting for your approval is updated, and a task under review the moment its review ends;
 - **after you approve**, once more, as the last safety net. It should rarely find anything.
 
+**`merge.catchUp merge` waits for the merge instead.** A task waiting for your yes is then left alone when main moves:
+no merge, no check, no review. It takes main in once, after you approve, right before it merges, and the check runs once
+on that result.
+
+- Clean merge and the check passes: the task lands. A clean merge needs no new review.
+- A conflict or a failed check: the task goes back to its agent, as below.
+
 **A clean update is silent.** If it changed the commit, the check runs again on the result. The review is not repeated
-when taking main in is all that happened to work that already passed ([below](#a-review-that-passed-is-not-repeated-for-a-merge-of-main)),
+when taking main in cleanly is all that happened to work that already passed ([below](#a-review-that-passed-is-not-repeated-when-nothing-since-wants-a-look)),
 or when the update touched none of the files the task itself changed. The verdict you have stands, and the task does not
 ask for your eyes again.
 
@@ -232,34 +239,43 @@ started from by name (`workspace.from develop`). Otherwise (no remote, or `pr` o
 the task first finished. For those, checking out another branch merges
 nothing into waiting tasks, and they are held as "behind main" until your checkout is back on it.
 
-### A review that passed is not repeated for a merge of main
+### A review that passed is not repeated when nothing since wants a look
 
-When the last review passed and the only change since the commit it looked at is main being merged in, the board runs
-the repo's `check` on the result instead of a new review.
+When the last review passed, the board looks at what came after the commit it looked at. The rule is fixed, and checked
+in git along the branch's own first-parent line:
+
+1. **nothing at all**: a turn that changed no code (an answer to pull request feedback, say);
+2. **merges of main**: two parents, the branch as it was and a commit of main. Such a merge wants a look only when git
+   could not merge it by itself (conflicts), or when it differs from what git makes of it beyond those conflicts. A
+   clean merge never does, whatever files main's side changed: the check proves it;
+3. **anything else** (an ordinary commit, another branch merged in) is the agent's own work.
+
+When there is no own work and no merge that wants a look, the board runs the repo's `check` instead of a new review.
 
 - **Tests pass**: the task goes on to approval or the merge, as a pass.
 - **Tests fail**: the failure goes back to the agent, as a failed check always does, and its fix is reviewed.
 
-The rule for "only the merge of main" is fixed, and checked in git from the commit the reviewer looked at to the branch
-as it stands:
+A rebase, a last review that failed or gave no verdict, or work outside a worktree is reviewed as before. A conflict the
+agent resolved in its merge commit is reviewed on its own (below); the agent is told this with the conflict.
 
-1. every commit since is a merge commit with two parents: the branch as it was, and a commit of main. An ordinary commit
-   on top, a rebase, or another branch merged in is new work;
-2. each of those merges is exactly what git makes of its two parents by itself. Only the files git could not merge (the
-   conflicts) may differ, because resolving them is what the merge needed. Any other file touched in the merge commit is
-   new work.
+A repo with no `check` has no tests to prove anything. There, a review stands only when a clean update touched none of
+the files the task changed, and the task says `no check is set` instead of `tests pass`.
 
-So a conflict the agent resolved in its merge commit, touching only the conflicting files, keeps the review. The agent is
-told this with the conflict. Anything else is reviewed as before, and so is everything the board cannot read for sure: a
-last review that failed or gave no verdict, work outside a worktree.
+The task says plainly what happened: its message reads `Re-merged with main, tests pass, review 2 still stands` (or `No
+code changed since review 2 passed, tests pass, it still stands`); that review's box carries the same line (with when,
+and how often); the row keeps showing the review that passed (`Pass · 2nd review`); and `details` lists each time under
+that review as `kept`.
 
-A repo with no `check` has no tests to prove a merge into the task's own files. There, a review stands only when a clean
-update touched none of the files the task changed (the narrower rule above), and the task says `no check is set` instead
-of `tests pass`.
+### A later round reviews only what came after the last review
 
-The task says plainly what happened: its message reads `Re-merged with main, tests pass, review 2 still stands`; that
-review's box carries the same line (with when, and how often); the row keeps showing the review that passed
-(`Pass · 2nd review`); and `details` lists each time under that review as `kept`. This is fixed behaviour, not a setting.
+Its brief still names the whole change, and lists what came since the commit the last review stood on:
+
+- the agent's own commits, as one `git log -p --first-parent --no-merges` range;
+- each merge of main that wants a look, with why and how to see it (`git show --remerge-diff`).
+
+Clean merges are left out: the check covered them. A rebased branch is reviewed whole. Some rules live in the head, not
+in a range (the last commit's message, rules over the whole branch): a repo names them in `review.laterChecks`, and every
+later round checks them anyway. This is fixed behaviour; only `review.laterChecks` and `merge.catchUp` are settings.
 
 ## Stepping in
 

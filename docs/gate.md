@@ -87,7 +87,9 @@ the result.
 - Clean merge and the check passes: the review still stands and the task merges at once. Such a merge of the board's
   own counts as reviewed. Any other new commit does not.
 - The merge conflicts, or the check fails after it: the task goes back to its agent to repair. What the agent made of
-  it is reviewed before it may merge, the conflicts it resolved included.
+  it is reviewed before it may merge, the conflicts it resolved included. That review looks at what came after the
+  last one only.
+- With `merge.catchUp merge`, a waiting task takes main in only here: once, right before the merge.
 
 ### One at a time
 

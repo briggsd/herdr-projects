@@ -45,9 +45,12 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     // The configured reviewer program may not be installed here: review with the working agent's kind instead, on that
     // kind's own default model and effort. Or, with a `reviewer.fallback`, the first on that list that is installed.
     let who = start::role_of("reviewer", &|n| ch.at(n).clone());
-    let (now_agent, stand_in) = reviewer_now(&t, ch);
+    let (mut now_agent, stand_in) = reviewer_now(&t, ch);
+    // Routed by the issue's labels (reviewer.byLabel), unless a hand-over already put another reviewer on the task.
+    let routed = if plan.is_none() && !t.b("reviewerOn") && stand_in.is_empty() { super::review_route::route(&t, ch, &if t.b("root") { PathBuf::from(t.s("root")) } else { folder_of(t.s("id")) }) } else { super::review_route::Route { agent: None, why: String::new() } };
+    if let Some(a) = &routed.agent { now_agent = a.clone(); }
     let on = agent_of(&now_agent);
-    let (mut rkind, mut rmodel, mut reffort, mut by) = (on.kind.clone(), on.model.clone(), who.effort.clone(), now_agent.clone());
+    let (mut rkind, mut rmodel, mut reffort, mut by) = (on.kind.clone(), on.model.clone(), if routed.agent.is_some() { String::new() } else { who.effort.clone() }, now_agent.clone());
     if !installed::installed(&rkind) && installed::installed(t.s("agent")) { rkind = t.t("agent"); rmodel = String::new(); reffort = String::new(); by = rkind.clone(); }
     // A stand-in for a program that is not installed is a hand-over like any other.
     if !stand_in.is_empty() { g.set(|t| { let h = log_handover(t, "reviewer", ch.s("reviewer.agent"), &now_agent, &format!("{stand_in} is not installed here")); t.put("reviewerOn", now_agent.clone()); t.put("msg", handover_line(&h)); })?; }
@@ -56,8 +59,9 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     // From the second round on, the reviewer's own program may review at another effort (reviewer.laterEffort).
     let later = ch.t("reviewer.laterEffort");
     if round >= 2 && plan.is_none() && !other && !later.is_empty() && later != "same" { reffort = later; }
+    if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: reviewer {by}{}", if routed.why.is_empty() { String::new() } else { format!(" ({})", routed.why) })); }
     if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: effort {}", if reffort.is_empty() { "default" } else { &reffort })); }
-    let note = if rkind != who.kind && !t.b("reviewerOn") && stand_in.is_empty() { Some(format!("reviewed by {rkind}: {} is not installed here", who.kind)) } else { None };
+    let note = if let Some(a) = &routed.agent { Some(format!("reviewed by {a}: the issue is {}", routed.why)) } else if rkind != who.kind && !t.b("reviewerOn") && stand_in.is_empty() { Some(format!("reviewed by {rkind}: {} is not installed here", who.kind)) } else { None };
     let was = t.t("reviewSession"); // a review started again: the conversation of the try before is not this one's
     t = g.set(|t| { if plan.is_none() { keep_saved_review(t); t.put("reviewRound", round); } t.put("reviewSession", Value::Null); let f = t.obj_mut("fallbacks"); match &note { Some(n) => f.put("reviewer", n.clone()), None => f.del("reviewer") } })?;
     // From the second round of a send-back on, the reviewer checks the earlier findings instead of starting over.

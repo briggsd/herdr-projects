@@ -12,6 +12,7 @@ pub mod model_refused;
 pub mod old_holds;
 pub mod closes;
 pub mod pipeline;
+pub mod review_route;
 pub mod pipeline_end;
 pub mod recover_job;
 pub mod research;

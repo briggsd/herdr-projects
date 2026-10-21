@@ -26,6 +26,15 @@ impl Fake for FakeHerdr {
     fn wired_to(&self, pid: i64, group: &[i64]) -> Option<bool> { Some(pid == 2 && group.contains(&2)) }
     /// How long the command left running has run, in seconds (`toolAge`), where a test says.
     fn age(&self, _pid: i64) -> Option<i64> { self.st.borrow().at("toolAge").as_i64() }
+    /// The command of pid 2 under a `tool` pane: none when it is already gone (`toolGone`), and once only, ending as it is
+    /// read, when it is short-lived (`toolBrief`).
+    fn command(&self, pid: i64) -> String {
+        let mut st = self.st.borrow_mut();
+        let Some(p) = st["panes"].as_array_mut().unwrap().iter_mut().find(|p| p.b("tool")) else { return format!("process {pid}") };
+        if p.b("toolGone") { return String::new(); }
+        if p.b("toolBrief") { p["tool"] = json!(false); }
+        format!("process {pid}")
+    }
     /// Ending a fake agent's process: its pane is at its shell again.
     /// pid 2 under a `tool` pane is the command it left running in the background: ended, it is no longer there.
     fn kill(&self, pid: i64) { self.st.borrow_mut()["killed"].as_array_mut().map(|k| k.push(json!(pid))); for p in self.st.borrow_mut()["panes"].as_array_mut().unwrap() { if p.at("agent").i("pid") == pid { p["agent"] = Value::Null; } if pid == 2 && p.b("tool") { p["tool"] = json!(false); } } }

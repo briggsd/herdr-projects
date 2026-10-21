@@ -2,7 +2,9 @@
 //! nothing is committed, merged or moved on. The board says so in runner.log ("turn end held: <pid> <command>"), tells
 //! the agent once to wait for the job, and judges its next turn's end again. The program's own helpers (an MCP or a
 //! language server, herdr/jobs.rs `pane_jobs`) do not count. After three holds in a row, or with a job running over an
-//! hour, the turn goes on as before, and runner.log says that too: a stuck job never holds a task for good.
+//! hour, the turn goes on as before, and runner.log says that too: a stuck job never holds a task for good. A job counts
+//! only when it is still there a second later: a turn's end runs short-lived children of its own (the status line's
+//! git, a hook), and one of those caught on its way out once held FL-225 for a pid that was already gone.
 use super::shared::runner_log;
 use crate::err::Res;
 use crate::flow;
@@ -19,7 +21,12 @@ fn max_age_s() -> i64 { std::env::var("HERDR_PROJECTS_HOLD_MAX_S").ok().and_then
 pub fn hold(id: &str, g: &mut Guard, t: &Task, said: &str, keep_intent: bool) -> Res<Option<String>> {
     let api = flow::task::h(t);
     let program = crate::agents::kinds::program(&crate::store::settings::values::agent_of(t.s("agent")).kind).to_string();
-    let jobs = api.pane_jobs(t.at("link").s("pane"), &program);
+    let mut jobs = api.pane_jobs(t.at("link").s("pane"), &program);
+    if !jobs.is_empty() {
+        if crate::herdr::cli::fake().is_none() { std::thread::sleep(std::time::Duration::from_secs(1)); }
+        let again = api.pane_jobs(t.at("link").s("pane"), &program);
+        jobs.retain(|j| again.iter().any(|a| a.pid == j.pid && a.command == j.command));
+    }
     let earlier = t.t("heldSaid");
     let go = |g: &mut Guard| -> Res<Option<String>> {
         if t.b("turnHolds") || t.b("heldSaid") { g.set(|t| { t.del("turnHolds"); t.del("heldSaid"); })?; }

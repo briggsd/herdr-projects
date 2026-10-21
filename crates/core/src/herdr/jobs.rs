@@ -8,13 +8,15 @@ impl Herdr {
     /// What the pane's agent started that still runs in the background: the same processes `pane_reap` would stop, each
     /// job once (the top of its tree), but not the program's own helpers it keeps between turns: one wired to the
     /// program on its input and output (an MCP server, procs.rs), an MCP or language server by its name, or the program
-    /// itself. Unknown (herdr does not answer): none.
+    /// itself. Unknown (herdr does not answer): none. A process already gone when its command is read (ps finds nothing)
+    /// is no job: a turn's end runs short-lived children of its own (the status line's git, a hook).
     pub fn pane_jobs(&self, id: &str, program: &str) -> Vec<Job> {
         let Some(i) = self.process_info(id) else { return vec![] };
         let (front, tops, _) = strays(&i);
         let fake = super::cli::fake();
         tops.into_iter().filter_map(|pid| {
             let command = command_of(pid);
+            if command.is_empty() { return None; }
             let first = command.split_whitespace().next().unwrap_or("").rsplit('/').next().unwrap_or("").to_string();
             if super::procs::wired_to(pid, &front) == Some(true) || helper_named(&command) || (!program.is_empty() && first == program) { return None; }
             let age = match &fake { Some(f) => f.age(pid), None => std::process::Command::new("ps").args(["-o", "etimes=", "-p", &pid.to_string()]).output().ok().and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok()) };
@@ -40,9 +42,9 @@ pub(super) fn strays(i: &Value) -> (Vec<i64>, Vec<i64>, Vec<i64>) {
     (front, tops, strays)
 }
 /// The command a process runs, 200 characters at most: for a shell an agent's tool wrapped it in (Claude Code's
-/// `bash -c source <snapshot> … && eval '<command>' < /dev/null && pwd -P …`), the command it evaluates.
+/// `bash -c source <snapshot> … && eval '<command>' < /dev/null && pwd -P …`), the command it evaluates. Empty: gone.
 pub(super) fn command_of(pid: i64) -> String {
-    if super::cli::fake().is_some() { return format!("process {pid}"); }
+    if let Some(f) = super::cli::fake() { return f.command(pid); }
     let o = std::process::Command::new("ps").args(["-ww", "-o", "args=", "-p", &pid.to_string()]).output().ok();
     o.map(|o| unwrapped(String::from_utf8_lossy(&o.stdout).trim()).chars().take(200).collect()).unwrap_or_default()
 }

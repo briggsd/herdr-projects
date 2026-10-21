@@ -20,7 +20,7 @@ fn herr(code: &str, message: impl Into<String>) -> HerdrError { HerdrError { cod
 /// What a run of the program gave: its status, its output, its error output.
 pub struct Ran { pub status: i32, pub stdout: String, pub stderr: String }
 /// A stand-in for herdr, for tests: answers each command line as the program would.
-pub trait Fake { fn run(&self, args: &[String], input: &str) -> Ran; fn kids(&self, _pid: i64) -> Vec<i64> { vec![] } fn wired_to(&self, pid: i64, group: &[i64]) -> Option<bool> { super::procs::real_wired_to(pid, group) } fn kill(&self, _pid: i64) {} fn age(&self, _pid: i64) -> Option<i64> { None } fn ask(&self, _method: &str, _params: &Value) -> Result<Value, HerdrError> { Err(herr("no_server", "no herdr")) } }
+pub trait Fake { fn run(&self, args: &[String], input: &str) -> Ran; fn kids(&self, _pid: i64) -> Vec<i64> { vec![] } fn wired_to(&self, pid: i64, group: &[i64]) -> Option<bool> { super::procs::real_wired_to(pid, group) } fn kill(&self, _pid: i64) {} fn age(&self, _pid: i64) -> Option<i64> { None } fn command(&self, pid: i64) -> String { format!("process {pid}") } fn ask(&self, _method: &str, _params: &Value) -> Result<Value, HerdrError> { Err(herr("no_server", "no herdr")) } }
 thread_local! { static FAKE: RefCell<Option<Rc<dyn Fake>>> = const { RefCell::new(None) }; }
 /// Tests only: herdr is this stand-in on this thread (None: the real program again).
 pub fn set_fake(f: Option<Rc<dyn Fake>>) { FAKE.with(|x| *x.borrow_mut() = f); }

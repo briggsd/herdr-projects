@@ -71,3 +71,13 @@ fn after_three_holds_or_with_a_job_over_an_hour_the_turn_goes_on_and_says_so() {
     assert!(log.contains("turn end not held: 2 has run 61 min; going on with 2 process 2 still running") && !log.contains("turn end held"), "{log}");
     assert_eq!(told.len(), 1);
 }
+
+#[test]
+fn a_process_gone_by_the_time_it_is_read_or_a_second_later_holds_nothing() {
+    for pane in [json!({ "tool": true, "toolGone": true }), json!({ "tool": true, "toolBrief": true })] {
+        let (t, log, told) = ran(json!([{ "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Did v1.", "pane": pane }]), None);
+        assert_eq!(t.s("stage"), "approval", "{pane}: {} {}", t.s("msg"), t.at("failure"));
+        assert!(!log.contains("turn end held"), "{pane}: {log}");
+        assert_eq!(told.len(), 1, "{pane}: {told:?}");
+    }
+}

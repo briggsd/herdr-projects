@@ -63,7 +63,7 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: effort {}", if reffort.is_empty() { "default" } else { &reffort })); }
     let note = if let Some(a) = &routed.agent { Some(format!("reviewed by {a}: the issue is {}", routed.why)) } else if rkind != who.kind && !t.b("reviewerOn") && stand_in.is_empty() { Some(format!("reviewed by {rkind}: {} is not installed here", who.kind)) } else { None };
     let was = t.t("reviewSession"); // a review started again: the conversation of the try before is not this one's
-    t = g.set(|t| { if plan.is_none() { keep_saved_review(t); t.put("reviewRound", round); } t.put("reviewSession", Value::Null); let f = t.obj_mut("fallbacks"); match &note { Some(n) => f.put("reviewer", n.clone()), None => f.del("reviewer") } })?;
+    t = g.set(|t| { if plan.is_none() { keep_saved_review(t); t.put("reviewRound", round); } t.put("reviewSession", Value::Null); t.put("reviewRouted", routed.agent.as_ref().map(|_| Value::from(routed.why.clone())).unwrap_or(Value::Null)); let f = t.obj_mut("fallbacks"); match &note { Some(n) => f.put("reviewer", n.clone()), None => f.del("reviewer") } })?;
     // From the second round of a send-back on, the reviewer checks the earlier findings instead of starting over.
     let before: Vec<Value> = if plan.is_some() { vec![] } else { review_history(&t).into_iter().filter(gate::is_tagged).collect() };
     let earlier: Option<Vec<Value>> = if t.i("reviewRounds") > 0 && !before.is_empty() { Some(before.last().unwrap().arr("findings").to_vec()) } else { None };

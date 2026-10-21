@@ -55,3 +55,21 @@ fn no_label_no_issue_or_gh_failing_keeps_the_reviewer_and_says_why() {
     assert_eq!(kinds, vec!["codex", "codex"]);
     assert!(log.contains("review 1: reviewer codex (no issue)"), "{log}");
 }
+
+#[test]
+fn a_routed_review_cut_off_with_nobody_left_on_the_list_goes_back_to_the_reviewer_and_says_so() {
+    let w = cut_world("30,30", json!({ "worker.agent": "pi", "reviewer.agent": "codex", "reviewer.effort": "high", "reviewer.fallback": ["claude"], "reviewer.byLabel": ["kind:docs"], "review.when": "always" }));
+    w.gh_says(json!({ "labels": ["kind:docs"] }));
+    w.script(json!({ "worker": [step(1)], "reviewer": [{ "ends": "claude-usage-limit-made" }, passing()] }));
+    let id = w.add("Fix the thing");
+    update(&id, |c| { c.put("description", ISSUE); Ok(Change::Write) }).unwrap();
+    delegate(&id);
+    let t = settle(&id);
+    assert_eq!(t.s("stage"), "approval", "the review is not failed: {} {}", t.s("msg"), t.at("failure"));
+    let kinds: Vec<String> = calls(&w).into_iter().filter(|c| c.starts_with("agent start") && !c.contains("--kind pi ")).map(|c| c.split("--kind ").nth(1).unwrap_or("").split(' ').next().unwrap_or("").to_string()).collect();
+    assert_eq!(kinds, vec!["claude", "codex"]);
+    let codex = calls(&w).into_iter().find(|c| c.starts_with("agent start") && c.contains("--kind codex ")).unwrap();
+    assert!(codex.contains("model_reasoning_effort=\"high\""), "at the reviewer's own effort: {codex}");
+    let log = std::fs::read_to_string(sw::store::files::dir_of(&id).join("runner.log")).unwrap_or_default();
+    assert!(log.contains("review 1: reviewer claude (kind:docs)") && log.contains("claude was cut off") && log.contains("codex, the routed review's last resort, reviews"), "{log}");
+}

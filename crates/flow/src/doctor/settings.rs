@@ -37,7 +37,9 @@ pub fn agents_at(at: &At) -> Vec<(String, AgentName, String)> {
         let Ok(f) = lookup_at(&e.name, &scope, &places) else { continue };
         let all: Vec<String> = match &f.value { Value::Array(a) => a.iter().map(text).collect(), Value::Number(_) => vec![], v => text(v).split(", ").map(String::from).collect() };
         let from = if ["task", "carried"].contains(&f.place.as_str()) { format!("{}{}", f.from, at.label) } else { f.from.clone() };
-        out.extend(all.iter().map(|a| agent_of(a.trim())).filter(|n| !n.kind.is_empty()).map(|n| (e.name.clone(), n, from.clone())));
+        // reviewer.laterAgent's own words name no program.
+        let own = |a: &str| e.name == "reviewer.laterAgent" && ["same", "fallback"].contains(&a.trim());
+        out.extend(all.iter().filter(|a| !own(a)).map(|a| agent_of(a.trim())).filter(|n| !n.kind.is_empty()).map(|n| (e.name.clone(), n, from.clone())));
     }
     out
 }

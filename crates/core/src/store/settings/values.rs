@@ -110,6 +110,7 @@ pub fn fits(name: &str, value: &str, agent: &str, ask: bool) -> String {
 fn word(v: &Value) -> String { text(v).trim().to_string() }
 fn check_agent(e: &Entry, v: &Value) -> Res<Value> {
     let w = word(v);
+    if e.name == "reviewer.laterAgent" && ["same", "fallback"].contains(&w.to_lowercase().as_str()) { return Ok(json!(w.to_lowercase())); }
     let n = agent_of(if w.to_lowercase() == NONE { NONE } else { &w });
     if n.kind.is_empty() {
         if e.none && w.to_lowercase() == NONE { return Ok(json!(NONE)); }
@@ -266,6 +267,7 @@ pub fn check(name: &str, value: &Value, agent: &str) -> Res<Value> {
 /// read from a file is not checked again, so reading never waits for a program's list.
 pub fn models_fit(name: &str, v: &Value) -> Res<()> {
     let Some(e) = entry_of(name).filter(|e| matches!(e.ty, Ty::Agent | Ty::Agents | Ty::Attempts)) else { return Ok(()) };
+    if name == "reviewer.laterAgent" && matches!(text(v).as_str(), "same" | "fallback") { return Ok(()); }
     let all: Vec<String> = match v { Value::Array(a) => a.iter().map(text).collect(), _ => text(v).split(", ").map(String::from).collect() };
     for a in all.iter().map(|x| agent_of(x)) { if let Some(why) = crate::agents::models::why_not(&a.kind, &a.model) { return refuse(format!("{}: {why}", e.name)); } }
     Ok(())

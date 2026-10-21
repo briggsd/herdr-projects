@@ -1,7 +1,9 @@
 //! Who reviews a task by its issue's labels (`reviewer.byLabel`): a task whose GitHub issue has one of those labels is
 //! reviewed by the first usable agent on `reviewer.fallback`, every round, on that agent's own effort. The issue is the
 //! one the task's description names (finish/closes.rs); its labels are asked of gh when the review starts. With no
-//! issue, no such label, or gh failing, `reviewer.agent` reviews as before, and the reason is said.
+//! issue, no such label, or gh failing, `reviewer.agent` reviews as before, and the reason is said. From a task's second
+//! round on, `reviewer.laterAgent` reviews whatever the labels (`fallback`: the first usable agent on the list; `same`:
+//! no change), unless a label already routed it.
 use super::hand_over::usable;
 use crate::json::*;
 use crate::store::handovers::next_fallback;
@@ -11,7 +13,19 @@ use std::path::Path;
 /// The routed reviewer, if any, and why (for the runner.log line); `why` is "" when no labels are set.
 pub struct Route { pub agent: Option<String>, pub why: String }
 
-pub fn route(t: &Obj, ch: &Obj, root: &Path) -> Route {
+pub fn route(t: &Obj, ch: &Obj, root: &Path, round: i64) -> Route {
+    let r = by_label(t, ch, root);
+    if r.agent.is_some() || round < 2 { return r; }
+    let later = ch.t("reviewer.laterAgent");
+    if later.is_empty() || later == "same" { return r; }
+    let access = ch.s("reviewer.access");
+    let a = if later == "fallback" { next_fallback(&list_of(ch.at("reviewer.fallback")), ch.s("reviewer.agent"), &[], |a| usable(a, access)).0 } else if usable(&later, access).is_empty() { later.clone() } else { String::new() };
+    if a.is_empty() { return Route { agent: None, why: format!("round 2+, but no usable {}", if later == "fallback" { "reviewer.fallback agent".to_string() } else { later }) }; }
+    if a == ch.s("reviewer.agent") { return r; }
+    Route { agent: Some(a), why: "round 2+".into() }
+}
+
+fn by_label(t: &Obj, ch: &Obj, root: &Path) -> Route {
     let keep = |why: String| Route { agent: None, why };
     let labels: Vec<String> = list_of(ch.at("reviewer.byLabel")).into_iter().filter(|l| l != "none").collect();
     if labels.is_empty() { return keep(String::new()); }

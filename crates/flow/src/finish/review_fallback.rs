@@ -34,8 +34,8 @@ pub fn next_reviewer(g: &mut Guard, ch: &Obj, from: &str, cut: &Cut, auth: bool,
     }
     let list = list_of(ch.at("reviewer.fallback"));
     let (next, skipped) = if list.is_empty() { (String::new(), vec![]) } else { next_fallback(&list, from, tried, |a| usable(a, ch.s("reviewer.access"))) };
-    // A review routed away from reviewer.agent by its issue's labels (reviewer.byLabel) goes back to it last, rather
-    // than failing.
+    // A review routed away from reviewer.agent (reviewer.byLabel, reviewer.laterAgent) goes back to it last, rather
+    // than failing; for this round only: the next round is routed again.
     let main = ch.t("reviewer.agent");
     let last = next.is_empty() && from != main && !tried.contains(&main) && crate::store::tasks::get(g.id()).is_some_and(|t| t.b("reviewRouted")) && usable(&main, ch.s("reviewer.access")).is_empty();
     let next = if last { main } else { next };
@@ -43,6 +43,6 @@ pub fn next_reviewer(g: &mut Guard, ch: &Obj, from: &str, cut: &Cut, auth: bool,
     if next.is_empty() { g.set(|t| t.obj_mut("fallbacks").put("reviewerLeft", nobody_left("reviewer.fallback", &skipped)))?; return Ok(String::new()); }
     let why = why_of(&cut.error, auth, cut.passing, &cut.reason, tries, crate::clock::now());
     if last { super::shared::runner_log(g.id(), &format!("review: {from} was cut off ({why}); {next}, the routed review's last resort, reviews")); }
-    g.set(|t| { let h = log_handover(t, "reviewer", from, &next, &why); t.put("reviewerOn", next.clone()); t.put("msg", handover_line(&h)); t.put("waiting", Value::Null); t.obj_mut("fallbacks").del("reviewerLeft"); })?;
+    g.set(|t| { let h = log_handover(t, "reviewer", from, &next, &why); t.put("reviewerOn", next.clone()); t.put("reviewLastResort", if last { Value::from(t.i("reviewRound") + 1) } else { Value::Null }); t.put("msg", handover_line(&h)); t.put("waiting", Value::Null); t.obj_mut("fallbacks").del("reviewerLeft"); })?;
     Ok(next)
 }

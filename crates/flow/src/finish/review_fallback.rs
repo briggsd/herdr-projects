@@ -37,12 +37,12 @@ pub fn next_reviewer(g: &mut Guard, ch: &Obj, from: &str, cut: &Cut, auth: bool,
     // A review routed away from reviewer.agent by its issue's labels (reviewer.byLabel) goes back to it last, rather
     // than failing.
     let main = ch.t("reviewer.agent");
-    let last = next.is_empty() && g.check()?.b("reviewRouted") && from != main && !tried.contains(&main) && usable(&main, ch.s("reviewer.access")).is_empty();
+    let last = next.is_empty() && from != main && !tried.contains(&main) && crate::store::tasks::get(g.id()).is_some_and(|t| t.b("reviewRouted")) && usable(&main, ch.s("reviewer.access")).is_empty();
     let next = if last { main } else { next };
     if next.is_empty() && list.is_empty() { return Ok(String::new()); }
     if next.is_empty() { g.set(|t| t.obj_mut("fallbacks").put("reviewerLeft", nobody_left("reviewer.fallback", &skipped)))?; return Ok(String::new()); }
     let why = why_of(&cut.error, auth, cut.passing, &cut.reason, tries, crate::clock::now());
-    if last { super::shared::runner_log(g.check()?.s("id"), &format!("review: {from} was cut off ({why}); {next}, the routed review's last resort, reviews")); }
+    if last { super::shared::runner_log(g.id(), &format!("review: {from} was cut off ({why}); {next}, the routed review's last resort, reviews")); }
     g.set(|t| { let h = log_handover(t, "reviewer", from, &next, &why); t.put("reviewerOn", next.clone()); t.put("msg", handover_line(&h)); t.put("waiting", Value::Null); t.obj_mut("fallbacks").del("reviewerLeft"); })?;
     Ok(next)
 }

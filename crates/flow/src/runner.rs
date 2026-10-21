@@ -108,6 +108,8 @@ impl Guard {
     pub fn new(id: &str) -> Self { Guard { id: id.into(), stages: vec![], armed: Value::Null, seen: f64::INFINITY, free: false } }
     /// A guard that only changes the task, with no runner of its own to check (a start that is no job's).
     pub fn free(id: &str) -> Self { Guard { free: true, ..Guard::new(id) } }
+    /// The task this guard is for.
+    pub fn id(&self) -> &str { &self.id }
     /// A turn of a chat that began while a review was under way, and changed nothing it looks at, is no new turn here.
     fn new_turn(&self, t: &Task) -> bool { t.arr("events").iter().any(|e| e.s("role") == "agent" && e.f("n") > self.seen) && !crate::flow::chat::review_goes_on(t) }
     /// Record the stage(s) this runner now stands in.

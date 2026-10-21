@@ -227,6 +227,10 @@ fn finish_steps(id: &str, g: &mut Guard, mut t: Task, ev: Option<Value>, force: 
             fail(g, f, FailHow::default())?;
             return Ok(());
         }
+        // A chat with reviewed work that changed nothing is no failure: back to where it was, its review kept.
+        let mut back = false;
+        let w = g.set(|t| { keep(t); back = super::chat::put_back_unchanged(t); })?;
+        if back { flow::sidebar::tell_sidebar(&w); return Ok(()); }
         g.set(|t| { keep(t); t.put("stage", "nosummary"); let m = one_line(&last_lines(&screen, 2), 2048); t.put("msg", if m.is_empty() { "Stopped without a summary".into() } else { m }); t.put("screen", screen.clone()); })?;
         return Ok(());
     }

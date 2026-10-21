@@ -23,6 +23,8 @@ pub fn recover_job(id: &str) {
         if !flow::handled_turn::reopened(&t, a.at("completion_seq")) || !pending_text(id).is_empty() { return; }
         let screen = last_lines(&read_screen(&api, t.at("link").s("pane"), Some(a.s("agent_status")), 60), 12);
         g.expect(&t, &[]);
+        let mut back = false;
+        if let Ok(w) = g.set(|t| { back = crate::finish::chat::put_back_unchanged(t); }) { if back { flow::sidebar::tell_sidebar(&w); return; } }
         let _ = g.set(|t| { t.put("stage", "nosummary"); t.put("msg", "Stopped without a summary"); t.put("screen", screen.clone()); t.put("turnOpen", false); t.put("since", now()); });
     })();
     release(id, false);

@@ -34,6 +34,16 @@ pub fn after_turn(g: &mut Guard) -> Res<bool> {
     flow::sidebar::tell_sidebar(&h);
     Ok(true)
 }
+/// A chat that ended without a word (no summary, no closing note) and changed no code: the task goes back to where it
+/// was, with its passed review, instead of stopping without a summary. True when it was put back.
+pub fn put_back_unchanged(t: &mut Task) -> bool {
+    if !t.at("chat").is_object() || !t.at("chat").at("from").is_object() || !chat::same_code(t, t.at("chat").s("head")) { return false; }
+    let head = t.at("chat").t("head");
+    chat::put_back(t);
+    t.put("turnOpen", false);
+    if current_review(t).is_some() { log_kept(t, &json!({ "chat": true, "head": head })); }
+    true
+}
 /// How long the board waits for you after a chat that changed the code.
 fn quiet(t: &Task) -> i64 { ms(&text(&setting("review.afterChat", Some(t)))).max(1000) }
 /// You are done with the chat: you left it, or said nothing more for the quiet time while the agent was at rest.

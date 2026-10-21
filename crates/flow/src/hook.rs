@@ -78,6 +78,8 @@ pub fn apply(id: &str, a: &Value, api: &Herdr) {
         let Ok(now_a) = api.agent_get(&pane) else { return };
         if now_a.map(|n| n.t("terminal_id")) != Some(term.clone()) { return; }
     }
+    // herdr calls a waiting task's agent at work: a turn of yours only if you gave it words (read before the lock)
+    let unprompted = status == "working" && known.as_ref().map(unprompted_work).unwrap_or(false);
     let mut then = Then::Nothing; // what to do after the lock is released: never a herdr call or a spawn under it
     let Ok(t) = update_wait(id, 10000, |t| {
         if t.b("archivedAt") || !is_agent_task(t) { return Ok(Change::Keep); }
@@ -108,6 +110,9 @@ pub fn apply(id: &str, a: &Value, api: &Herdr) {
         if status == "working" {
             if t.b("selfBlocked") { return Ok(Change::Write); } // it reported itself blocked and has not stopped yet: still that same turn
             if t.b("expectedWake") { if t.s("stage") != "working" && !runner_alive(t) { t.put("stage", "working"); } return Ok(Change::Write); } // the plugin's own turn: flaps change nothing
+            // Work nobody asked for while the task waits (its program compacting its conversation while idle, a redraw):
+            // no turn of yours, and the task stays as it is. The turn it may count when it is at rest again is not one either.
+            if unprompted && !t.b("turnOpen") && WAITING.contains(&t.s("stage")) { t.put("unprompted", true); return Ok(Change::Write); }
             // The turn is the human's: typing in the agent's own terminal re-arms the pipeline.
             if !t.b("turnOpen") || t.s("stage") != "working" {
                 if !after_handled(t, a, prev_same) { return Ok(Change::Write); } // still the turn the finish line handled, not a new one
@@ -161,6 +166,7 @@ pub fn apply(id: &str, a: &Value, api: &Herdr) {
             }
             if not_started(t) { return Ok(Change::Write); } // told "not started": a turn that ended before the text went in changes nothing
             let waiting = WAITING.contains(&t.s("stage")) && !runner_alive(t);
+            if t.b("unprompted") { t.del("unprompted"); if waiting && !comp.is_null() { t.obj_mut("handled").put("comp", comp.clone()); } } // the end of that unasked work
             if waiting && same_turn(t) { if !comp.is_null() { t.obj_mut("handled").put("comp", comp.clone()); } return Ok(Change::Write); } // herdr counted a turn the agent's own report already finished
             if waiting && missed_turn(t, &comp) { human_turn_ended(t); then = Then::FinishForce; }
             return Ok(Change::Write);
@@ -196,6 +202,19 @@ pub fn apply(id: &str, a: &Value, api: &Herdr) {
         Then::Nothing => {}
     }
 }
+/// A `working` reading for a task that waits, with no prompt in its agent's saved conversation since herdr last saw
+/// it work: the program working by itself (Claude Code compacting while idle), not words typed into its terminal.
+/// Only where the conversation can be read and says so; anything unknown counts as yours, as before. A prompt can
+/// reach the file a moment after herdr sees the work start: it is looked for twice.
+fn unprompted_work(t: &Task) -> bool {
+    if !WAITING.contains(&t.s("stage")) || t.b("turnOpen") || t.b("expectedWake") || t.b("selfBlocked") || t.i("workedAt") <= 0 { return false; }
+    let asked = || read_turn_of(t.s("agent"), t.so("transcript").map(Path::new), t.s("session"), &cwd_of(t), true).map(|turn| turn.began);
+    let quiet = |b: Option<i64>| b.map(|b| b > 0 && b <= t.i("workedAt")).unwrap_or(false);
+    if !quiet(asked()) { return false; }
+    std::thread::sleep(std::time::Duration::from_millis(unprompted_wait_ms()));
+    quiet(asked())
+}
+fn unprompted_wait_ms() -> u64 { std::env::var("HERDR_PROJECTS_PROMPT_WAIT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500) }
 fn stale_review(t: &mut Task) { if t.at("review").is_object() && !t.at("review").b("stale") { t.obj_mut("review").put("stale", true); } }
 /// The working agent's saved conversation ends in an error newer than the turn that was handled last and than the
 /// prompt that armed this one (what the finish line itself asks before it takes an error for the turn's end).

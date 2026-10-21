@@ -283,6 +283,10 @@ Typing in the agent's own terminal, or replying from the board, starts all of th
 pending auto-merge is cancelled (a cancellation that fails is saved as a visible failure), and the old review is marked
 stale. A chat with reviewed work is the exception: what it starts over only counts once the code changed.
 
+Only your words start it. The agent at work while the task waits, with no prompt in its saved conversation since herdr
+last saw it work, is its program working by itself (Claude Code compacting its conversation while idle, a redraw): the
+task stays as it is. Where the conversation cannot be read (an agent kind without one), any work counts as yours.
+
 ### Chatting with a finished task re-reviews only what changed
 
 When you talk to the agent of a task that is under review, waits for your yes, or is done (your own words: from the
@@ -294,6 +298,7 @@ compares:
   stage it was in, with the same review, and no check, review or merge starts. Its row says so after the review's result
   (`Pass · 1 minor · Chatting · no changes, review kept`), and the task panel lists it under that review
   (`a chat changed no code, review 2 still stands`, with when and how often).
+  This holds when the turn ends without a summary or closing note too: no code changed, nothing failed.
 - **A review was under way** when you wrote: it goes on (the box says `Send message to Agent: the review goes on unless the code changes`). What the reviewer changed is not put back while the agent may be at work in the same folder. If
   the agent's turn changed nothing, the review's result stands as it ends. If it changed the code, the review is stopped
   (or, if already through, its result no longer covers the work), and the change waits as below.

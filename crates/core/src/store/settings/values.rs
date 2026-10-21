@@ -99,6 +99,7 @@ pub fn agent_of(value: &str) -> AgentName {
 pub fn fits(name: &str, value: &str, agent: &str, ask: bool) -> String {
     let n = agent_of(agent);
     let (Some(e), Some(a)) = (entry_of(name), kind(&n.kind)) else { return String::new() };
+    if e.ty == Ty::Effort && name == "reviewer.laterEffort" && value == "same" { return String::new(); }
     if e.ty == Ty::Effort { return why_not_effort(a.name, &n.model, value, if ask { Ask::Fresh } else { Ask::Kept }).unwrap_or_default(); }
     if e.ty == Ty::Access && value != "full" && !(value == "ask" && a.access_ask.is_some()) {
         return format!("{} cannot do \"{value}\": it never asks before it acts. Keep {name} at full, or choose another program for {}.agent.", a.name, name.split('.').next().unwrap_or(""));

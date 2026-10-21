@@ -197,7 +197,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                     let mut said = if text.is_empty() { t.t("title") } else { text.to_string() };
                     // The issue's plain closing line, which the agent's closing message may have left out.
                     if let Some(n) = super::closes::issue_of(&t, &root) {
-                        if let Some(b) = super::closes::with_closes(&said, n) { said = b; super::closes::log(id, &format!("pr body: added Closes #{n}")); }
+                        if let Some(b) = super::closes::with_closes(&said, n) { said = b; super::shared::runner_log(id, &format!("pr body: added Closes #{n}")); }
                     }
                     let body = format!("{said}\n\nTask: {}", task_ref(id, &repo_keys()));
                     let mut args = vec!["pr", "create", "--draft", "--head", t.s("branch"), "--title", if t.b("title") { t.s("title") } else { id }, "--body", &body];

@@ -48,10 +48,3 @@ fn placed(body: &str, n: u64) -> Option<String> {
     Some(if body.trim().is_empty() { line } else { format!("{line}\n\n{body}") })
 }
 
-/// A line in the task's runner.log.
-pub fn log(id: &str, what: &str) {
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(crate::store::files::dir_of(id).join("runner.log")) {
-        use std::io::Write;
-        let _ = writeln!(f, "{} {what}", crate::clock::iso(crate::clock::now()));
-    }
-}

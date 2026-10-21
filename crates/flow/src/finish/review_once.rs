@@ -53,6 +53,10 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     if !stand_in.is_empty() { g.set(|t| { let h = log_handover(t, "reviewer", ch.s("reviewer.agent"), &now_agent, &format!("{stand_in} is not installed here")); t.put("reviewerOn", now_agent.clone()); t.put("msg", handover_line(&h)); })?; }
     let round = if plan.is_some() { 0 } else { t.i("reviewRound") + 1 };
     let other = by != ch.s("reviewer.agent");
+    // From the second round on, the reviewer's own program may review at another effort (reviewer.laterEffort).
+    let later = ch.t("reviewer.laterEffort");
+    if round >= 2 && plan.is_none() && !other && !later.is_empty() && later != "same" { reffort = later; }
+    if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: effort {}", if reffort.is_empty() { "default" } else { &reffort })); }
     let note = if rkind != who.kind && !t.b("reviewerOn") && stand_in.is_empty() { Some(format!("reviewed by {rkind}: {} is not installed here", who.kind)) } else { None };
     let was = t.t("reviewSession"); // a review started again: the conversation of the try before is not this one's
     t = g.set(|t| { if plan.is_none() { keep_saved_review(t); t.put("reviewRound", round); } t.put("reviewSession", Value::Null); let f = t.obj_mut("fallbacks"); match &note { Some(n) => f.put("reviewer", n.clone()), None => f.del("reviewer") } })?;

@@ -44,3 +44,11 @@ pub fn fail(g: &mut Guard, failure: Obj, how: FailHow) -> Res<Task> {
 }
 /// A failure from its parts.
 pub fn failure(stage: &str, title: &str, detail: &str, next: &str) -> Obj { obj(json!({ "stage": stage, "title": title, "detail": detail, "next": next })) }
+
+/// A line in the task's runner.log, after the time.
+pub fn runner_log(id: &str, what: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(crate::store::files::dir_of(id).join("runner.log")) {
+        use std::io::Write;
+        let _ = writeln!(f, "{} {what}", crate::clock::iso(crate::clock::now()));
+    }
+}

@@ -1,6 +1,6 @@
-//! Work that passed its review and then only took main in, clean and apart from its own files, is not reviewed again:
-//! the tests run on the merged result and the review stands. A merge with conflicts or into its files, and anything
-//! beyond the merge, is reviewed again (since_review.rs: only what came after the review).
+//! Work that passed its review and then only took main in cleanly is not reviewed again: the tests run on the merged
+//! result and the review stands. A merge with conflicts, and anything beyond the merge, is reviewed again
+//! (since_review.rs: only what came after the review). `merge.catchUp merge` takes main in only at the merge.
 use crate::common;
 use common::*;
 use serde_json::json;
@@ -53,14 +53,34 @@ fn main_merged_cleanly_apart_from_the_tasks_files_after_a_passing_review_the_tes
 }
 
 #[test]
-fn main_merged_cleanly_into_the_tasks_own_file_after_a_passing_review_is_reviewed_again() {
+fn main_merged_cleanly_into_the_tasks_own_file_after_a_passing_review_the_review_stands_too() {
     let (w, id, reviewed) = passed();
     let main = main_moves(&w, &[("big.txt", &big("line 1", "MAIN"))]);
     let t = resync(&w, &id);
     assert_eq!(t.s("stage"), "approval", "{}", t.at("failure")); assert!(holds(t.s("worktree"), &main));
-    assert_eq!(t.i("reviewRound"), 2, "main's side touched big.txt, which the task changed"); assert!(!t.at("review").b("keptAt"));
-    let s = sw::sync::since_review(t.s("worktree"), &reviewed, &main);
-    assert_eq!(s.arr("merges")[0].at("touches"), &json!(["big.txt"]));
+    assert_eq!(t.i("reviewRound"), 1, "a clean merge is proven by the check, whatever files main changed"); assert!(t.at("review").b("keptAt"));
+    assert_eq!(t.at("review").at("kept").t("from"), reviewed);
+}
+
+/// `merge.catchUp merge`: a task waiting for your yes is left alone when main moves; it takes main in once, at the merge.
+#[test]
+fn with_catch_up_at_merge_a_waiting_task_is_left_alone_and_takes_main_in_once_when_it_merges() {
+    let w = world_with(Opts { repo: true, repo_settings: Some(json!({ "check.command": "! test -f broken.txt" })), settings: json!({ "merge.catchUp": "merge" }), ..Default::default() });
+    std::fs::write(w.root.join("big.txt"), big("line 1", "line 20")).unwrap(); git(&w.root, &["add", "-A"]); git(&w.root, &["commit", "-qm", "big"]);
+    w.script(json!({ "worker": [{ "files": { "big.txt": big("TASK", "line 20") }, "commit": "task", "note": "Changed the first line." }] }));
+    let id = w.add("Edit big");
+    delegate(&id);
+    let t = settle(&id);
+    assert_eq!(t.s("stage"), "approval"); let reviewed = t.t("reviewedHead");
+    let main = main_moves(&w, &[("big.txt", &big("line 1", "MAIN"))]);
+    let u = resync(&w, &id);
+    assert_eq!(u.s("stage"), "approval"); assert_eq!(head(&u), reviewed, "nothing merged while it waits"); assert!(!holds(u.s("worktree"), &main));
+    main_moves(&w, &[("other.txt", "MAIN AGAIN\n")]);
+    assert_eq!(head(&resync(&w, &id)), reviewed);
+    sw::actions::finish_line::approve(&id, None, false).unwrap();
+    let d = settle(&id);
+    assert_eq!(d.s("stage"), "done", "{}", d.at("failure")); assert_eq!(d.i("reviewRound"), 1, "the clean merge at the gate is only checked");
+    assert_eq!(read(&w.root.join("big.txt")), big("TASK", "MAIN")); assert_eq!(read(&w.root.join("other.txt")), "MAIN AGAIN\n");
 }
 
 #[test]

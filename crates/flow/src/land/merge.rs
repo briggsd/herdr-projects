@@ -128,7 +128,8 @@ pub fn land_core(id: &str, g: &mut Guard) -> Res<()> {
             Err(e) if is_aborted(&e) => return Err(e),
             Err(e) => return fail(g, "Could not read the task's worktree", &format!("Worktree: {tree}\n\nWhat git said:\n{}", e.msg), "Check that the worktree is still there and on the task's own branch, then approve again.", Fail::default()),
         }
-        // The last safety net: the branch was brought up to date before its review and whenever main moved since.
+        // The last safety net: the branch was brought up to date before its review and, unless `merge.catchUp` is
+        // `merge`, whenever main moved since. With `merge` this is the one time it takes main in while it waits.
         let r = sync::sync_main(&t, &tree);
         match r.status {
             "skip" => return fail(g, "Your checkout is on another branch", &format!("Checkout: {}\nIt is on: {}\nThis task lands on: {}\n\nNothing was merged.", root.display(), r.onto.as_deref().filter(|s| !s.is_empty()).unwrap_or("no branch"), r.want), &format!("Switch your checkout back to {}, then approve again.", r.want), no_fix()),

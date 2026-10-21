@@ -90,8 +90,8 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
     let mut kept_how: Option<Value> = None;
     if !check.is_empty() && !tree.is_empty() && ch.s("review.when") != "never" {
         // Nothing since the passed review wants a look (sync::since_review is the rule): no commit at all (a turn on pull
-        // request feedback that changed no code), or only merges of main that went through clean and apart from the
-        // change's files. A merge with conflicts, or one whose main side touches those files, is reviewed, on its own.
+        // request feedback that changed no code), or only merges of main that went through clean. A merge with conflicts,
+        // or one that changes more than they needed, is reviewed, on its own.
         if let Some((review, head, _)) = passed_review(&t) {
             let s = sync::since_review(&tree, &head, &sync_r.map(|r| r.target.clone()).unwrap_or_default());
             if sync::nothing_to_look_at(&s) { kept = Some(review); kept_how = Some(json!({ "from": head, "merges": s.arr("merges").len(), "resolved": [], "same": s.arr("merges").is_empty() })); }

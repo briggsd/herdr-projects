@@ -71,10 +71,9 @@ fn since_lines(s: &Value, ch: &Obj) -> String {
             let mut why = vec![];
             if !m.arr("conflicts").is_empty() { why.push(format!("its conflicts were resolved by hand in {}", m.arr("conflicts").iter().map(text).collect::<Vec<_>>().join(", "))); }
             if !m.arr("extra").is_empty() { why.push(format!("it changes more than its conflicts needed: {}", m.arr("extra").iter().map(text).collect::<Vec<_>>().join(", "))); }
-            if !m.arr("touches").is_empty() { why.push(format!("main's side changes files this change changes too: {}", m.arr("touches").iter().map(text).collect::<Vec<_>>().join(", "))); }
             l.push_str(&format!("\n- the merge of main {} ({}): `git show --remerge-diff {}` shows what was done by hand, `git diff {}^1 {}` what main brought", short(m.s("commit")), why.join("; "), m.s("commit"), m.s("commit"), m.s("commit")));
         }
-        if skipped > 0 { l.push_str(&format!("\n{skipped} other merge{} of main went through clean and touch{} none of the change's files: the check covered {}.", if skipped == 1 { "" } else { "s" }, if skipped == 1 { "es" } else { "" }, if skipped == 1 { "it" } else { "them" })); }
+        if skipped > 0 { l.push_str(&format!("\n{skipped} other merge{} of main went through clean: the check covered {}.", if skipped == 1 { "" } else { "s" }, if skipped == 1 { "it" } else { "them" })); }
         l
     };
     let checks = ch.s("review.laterChecks").trim();

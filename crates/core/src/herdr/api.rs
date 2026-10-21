@@ -106,9 +106,9 @@ impl Herdr {
     }
     /// Stop what the pane's agent left running in the background (out of the terminal's foreground, under its programs),
     /// with all under it: TERM, then KILL what is left after `wait_ms`. The pane's shell and its own jobs are not
-    /// touched, nor anything in the foreground. Returns how many processes were signalled.
-    pub fn pane_reap(&self, id: &str, wait_ms: i64) -> usize {
-        let Some(i) = self.process_info(id) else { return 0 };
+    /// touched, nor anything in the foreground. Returns each signal sent: the pid, the signal, the command it ran.
+    pub fn pane_reap(&self, id: &str, wait_ms: i64) -> Vec<(i64, &'static str, String)> {
+        let Some(i) = self.process_info(id) else { return vec![] };
         let front: Vec<i64> = i.arr("foreground_processes").iter().filter(|p| crate::gate::is_int(p.at("pid"))).map(|p| p.i("pid")).collect();
         let shell = i.i("shell_pid");
         let (mut strays, mut todo): (Vec<i64>, Vec<i64>) = (vec![], front.iter().copied().filter(|p| *p != shell).collect());
@@ -117,18 +117,27 @@ impl Herdr {
         }
         let fake = super::cli::fake();
         let alive = |pid: i64| fake.is_none() && unsafe { libc::kill(pid as i32, 0) } == 0;
-        for sig in [libc::SIGTERM, libc::SIGKILL] {
+        let command = |pid: i64| -> String {
+            if fake.is_some() { return format!("process {pid}"); }
+            let o = std::process::Command::new("ps").args(["-o", "args=", "-p", &pid.to_string()]).output().ok();
+            o.map(|o| String::from_utf8_lossy(&o.stdout).trim().chars().take(200).collect()).unwrap_or_default()
+        };
+        let cmds: Vec<(i64, String)> = strays.iter().map(|p| (*p, command(*p))).collect(); // read before any of them ends
+        let mut sent = vec![];
+        for (sig, name) in [(libc::SIGTERM, "TERM"), (libc::SIGKILL, "KILL")] {
             let left: Vec<i64> = if sig == libc::SIGTERM { strays.clone() } else { strays.iter().copied().filter(|p| alive(*p)).collect() };
             for pid in &left {
                 match &fake { Some(f) => f.kill(*pid), None if *pid > 1 => unsafe {
                     if libc::getpgid(*pid as i32) == *pid as i32 { libc::kill(-(*pid as i32), sig); } // its own group: what it forked off goes too
                     libc::kill(*pid as i32, sig);
-                }, None => {} }
+                }, None => continue }
+                sent.push((*pid, name, cmds.iter().find(|c| c.0 == *pid).map(|c| c.1.clone()).unwrap_or_default()));
             }
+            if left.is_empty() { break; }
             let until = crate::clock::now() + wait_ms;
             while crate::clock::now() < until && strays.iter().any(|p| alive(*p)) { std::thread::sleep(std::time::Duration::from_millis(200)); }
         }
-        strays.len()
+        sent
     }
     /// A pane, with whatever runs in it, into a new tab of another space. Never focused.
     pub fn pane_move(&self, id: &str, workspace: &str, label: &str) -> HRes<Value> {

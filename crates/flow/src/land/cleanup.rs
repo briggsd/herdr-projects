@@ -27,6 +27,13 @@ pub struct Opts<'a> { pub delete_branch: &'a str, pub keep_unmerged: bool, pub s
 pub fn cleanup(t: &Task, delete_branch: &str) -> Vec<String> { cleanup_with(t, Opts { delete_branch, keep_unmerged: false, still: None, since: None, first: None }).kept }
 fn still_ms() -> i64 { std::env::var("HERDR_PROJECTS_STILL_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(120000) }
 fn reap_ms() -> i64 { std::env::var("HERDR_PROJECTS_REAP_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(10000) }
+/// The reap, once in an attempt, and what it did in the task's runner.log: each signal sent, or that there was nothing.
+fn reap_now(api: &Herdr, t: &Task, pane: &str) {
+    let sent = api.pane_reap(pane, reap_ms());
+    let at = crate::clock::iso(now());
+    let lines: Vec<String> = if sent.is_empty() { vec![format!("{at} reap: nothing to stop under the agent in {pane}")] } else { sent.iter().map(|(pid, sig, cmd)| format!("{at} reap: stopped pid {pid} with {sig}: {cmd}")).collect() };
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(crate::store::files::dir_of(t.s("id")).join("runner.log")) { use std::io::Write; for l in lines { let _ = writeln!(f, "{l}"); } }
+}
 fn settle_ms() -> i64 { std::env::var("HERDR_PROJECTS_SETTLE_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(5000) }
 #[derive(Clone, Copy)]
 struct AgentNow { busy: bool, unknown: bool }
@@ -42,6 +49,7 @@ pub fn cleanup_with(t: &Task, o: Opts) -> Cleanup {
     }
     let still = o.still.is_some();
     let reap = still && setting("workspace.reap", Some(t)) == json!(true);
+    let reaped = Cell::new(false); // once in each attempt
     // False when herdr did not close it (a timeout): then it is still in the sidebar, and that is tried again.
     let close_space = || -> bool {
         let (Some(w), true, Some(api)) = (&ws, link.b("ownsWorkspace"), &api) else { return true };
@@ -77,7 +85,8 @@ pub fn cleanup_with(t: &Task, o: Opts) -> Cleanup {
                 let busy = st == "working" || st == "blocked";
                 let childless = || api.pane_childless(link.s("pane"), a.s("agent"));
                 // `workspace.reap`: what a finished agent of a done task left running in the background is stopped, not waited for
-                let unknown = if st == "idle" || st == "done" { !childless() && !(reap && api.pane_reap(link.s("pane"), reap_ms()) > 0 && childless()) } else { !busy && !at_rest(&a) };
+                if reap && (st == "idle" || st == "done") && !reaped.replace(true) { reap_now(api, t, link.s("pane")); }
+                let unknown = if st == "idle" || st == "done" { !childless() } else { !busy && !at_rest(&a) };
                 Some(AgentNow { busy, unknown })
             }
             Ok(None) => { *seen.borrow_mut() = Value::Null; None }

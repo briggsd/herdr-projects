@@ -226,6 +226,9 @@ fn with_reap_on_what_a_finished_agent_left_running_in_the_background_is_stopped_
     assert_eq!(pass(&w, &id), 1);
     assert_eq!(w.state().arr("killed").to_vec(), [json!(2)]);
     assert!(gone(&w, &t), "{}", kept(&task(&id)));
+    let log = |id: &str| std::fs::read_to_string(sw::store::files::dir_of(id).join("runner.log")).unwrap_or_default();
+    let reaps = |id: &str| log(id).lines().filter(|l| l.contains(" reap: ")).map(|l| l.split_once(" reap: ").unwrap().1.to_string()).collect::<Vec<_>>();
+    assert_eq!(reaps(&id), ["stopped pid 2 with TERM: process 2"], "each process it stops, in the task's runner.log");
     // a command in the agent's foreground (on the terminal) is not stopped: kept until it ends
     let t = merged_with(&w, "child");
     let (id, p) = (t.t("id"), t.at("link").t("pane"));
@@ -233,9 +236,11 @@ fn with_reap_on_what_a_finished_agent_left_running_in_the_background_is_stopped_
     pane(&w, &p, |p| p["child"] = json!(false));
     assert_eq!(pass(&w, &id), 1);
     assert!(gone(&w, &t));
+    assert!(!reaps(&id).is_empty() && reaps(&id).iter().all(|l| l.starts_with("nothing to stop under the agent in ")), "a reap with nothing to stop says so: {:?}", reaps(&id));
     // an agent at work is never touched, whatever runs under it
     let t = merged(&w, 3, |t| { pane(&w, t.at("link").s("pane"), |p| p["tool"] = json!(true)); status(&w, t, "working", false); });
     let id = t.t("id");
     pass(&w, &id); // a turn: put off for the quiet time, and then still at work
     assert!(open_and_kept(&w, &t)); assert_eq!(w.state().arr("killed").len(), 1);
+    assert!(reaps(&id).is_empty(), "no reap at all while it works");
 }

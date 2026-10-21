@@ -337,7 +337,8 @@ itself, and its worktree and branch are removed. `workspace.cleanup false` keeps
   under the agent: a test, a build, a wait loop) is stopped instead of waited for: TERM, then KILL after 10 seconds,
   with everything under it. Only once the task is done and its agent is idle; never a command in the foreground, nor
   the pane's shell or its jobs. Stopping it may end in a last turn of the agent, and the space closes when that has
-  been quiet for a while, as after any turn.
+  been quiet for a while, as after any turn. The task's `runner.log` says what each reap did: one line per signal sent
+  (the pid, TERM or KILL, the command), or one line saying there was nothing to stop.
 - Nor is one Herdr could not answer for, or whose Herdr session is not running: then nothing of the task is touched.
 - The clean-up is tried again by itself (about every half minute, board open or closed) and happens once the space is
   free. After a turn of the agent, only once that has been quiet for ten minutes. Work that appeared meanwhile is kept.

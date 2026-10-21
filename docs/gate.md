@@ -52,7 +52,8 @@ it is green:
   still stands and the task merges at once: such a merge of the board's own counts as
   reviewed. Any other new commit does not. When the merge conflicts, or the check fails after it, the task goes
   back to its agent to repair, and what the agent made of it is reviewed before it may merge, the
-  conflicts it resolved included (that review looks at what came after the last one only).
+  conflicts it resolved included (that review looks at what came after the last one only). With
+  `merge.catchUp merge` a waiting task takes main in only here, once, right before the merge.
 - **One at a time.** Every merge moves main under the tasks behind it, so a repo's tasks merge in a line: one
   catches up, is checked and merges, then the next, in the order they became ready. A task that waits says
   `Waiting to merge: <id> goes first`; it is not brought up to date before its turn, so it catches up once, not

@@ -34,11 +34,11 @@ fn since_review_lists_own_commits_and_the_merges_of_main_that_want_a_look() {
     // with no main to hold it against, a merge is the branch's own work, all it brought in
     let s = since(&reviewed, "");
     assert_eq!((s.arr("own").len(), s.arr("other").len()), (0, 1)); assert!(!sw::sync::nothing_to_look_at(&s));
-    // main's side changes the change's own file elsewhere: git merges it by itself, and still it wants a look
+    // main's side changes the change's own file elsewhere: git merges it by itself, so nothing to look at either
     git(&dir, &["checkout", "-q", "main"]); write("a.txt", "1\n2\n3\n4\n5\nMAIN\n"); let touching = commit("touching");
     git(&dir, &["checkout", "-q", "-B", "t2", &reviewed]); merge(&touching);
-    let mm = since(&reviewed, &touching).arr("merges")[0].clone();
-    assert_eq!((mm.at("conflicts").clone(), mm.at("extra").clone(), mm.at("touches").clone(), mm.b("look")), (json!([]), json!([]), json!(["a.txt"]), true));
+    let s = since(&reviewed, &touching);
+    assert!(sw::sync::nothing_to_look_at(&s), "{s}"); assert_eq!(s.arr("merges")[0].b("look"), false);
     // a conflict resolved by hand
     git(&dir, &["checkout", "-q", "main"]); write("a.txt", "MAIN\n2\n3\n4\n5\nMAIN\n"); let conflicting = commit("conflicting");
     git(&dir, &["checkout", "-q", "-B", "t3", &reviewed]); merge(&conflicting); write("a.txt", "BOTH\n2\n3\n4\n5\nMAIN\n"); let m = commit("resolve");
@@ -66,8 +66,8 @@ fn a_later_round_is_told_to_review_only_what_came_since_and_the_checks_on_the_he
     let _w = world();
     let t = obj(json!({ "id": "proj/1", "n": 1, "title": "Do it", "description": "" }));
     let since = json!({ "ok": true, "from": "1111111111aaaa", "head": "2222222222bbbb", "own": ["3333"], "other": ["6666666666eeee"], "merges": [
-        { "commit": "4444444444cccc", "conflicts": ["a.txt"], "extra": [], "touches": ["a.txt"], "look": true },
-        { "commit": "5555555555dddd", "conflicts": [], "extra": [], "touches": [], "look": false }] });
+        { "commit": "4444444444cccc", "conflicts": ["a.txt"], "extra": [], "look": true },
+        { "commit": "5555555555dddd", "conflicts": [], "extra": [], "look": false }] });
     let change = json!({ "head": "2222222222bbbb", "range": "base...HEAD", "stat": "1 file changed", "since": since });
     let mut ch = Obj::new();
     ch.put("review.laterChecks", "- The last commit's message is the squash message.");
@@ -75,9 +75,9 @@ fn a_later_round_is_told_to_review_only_what_came_since_and_the_checks_on_the_he
     assert!(brief.contains("`git diff base...HEAD`"), "the whole change is still named");
     assert!(brief.contains("Earlier rounds reviewed the branch up to 1111111111. Review only what came after it"), "{brief}");
     assert!(brief.contains("- the agent's own commit since then: `git log -p --first-parent --no-merges 1111111111aaaa..2222222222bbbb`"), "{brief}");
-    assert!(brief.contains("- the merge of main 4444444444 (its conflicts were resolved by hand in a.txt; main's side changes files this change changes too: a.txt): `git show --remerge-diff 4444444444cccc`"), "{brief}");
+    assert!(brief.contains("- the merge of main 4444444444 (its conflicts were resolved by hand in a.txt): `git show --remerge-diff 4444444444cccc`"), "{brief}");
     assert!(brief.contains("- the merge 6666666666 of something other than main: all it brought in is new, `git diff 6666666666eeee^1 6666666666eeee`"), "{brief}");
-    assert!(brief.contains("1 other merge of main went through clean and touches none of the change's files"), "{brief}");
+    assert!(brief.contains("1 other merge of main went through clean: the check covered it."), "{brief}");
     assert!(brief.contains("Whatever the range, also check these on the commit under review: they live in the head, not in the diff.\n- The last commit's message is the squash message."), "{brief}");
     // nothing new since the last review
     let same = json!({ "head": "1111111111aaaa", "range": "base...HEAD", "stat": "1 file changed", "since": { "ok": true, "from": "1111111111aaaa", "head": "1111111111aaaa", "own": [], "merges": [] } });

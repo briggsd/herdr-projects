@@ -100,8 +100,12 @@ that task's own worktree:
   minutes): every task waiting for your approval is updated, and a task under review the moment its review ends;
 - *after you approve*, once more, as the last safety net. It should rarely find anything.
 
+With `merge.catchUp merge` a task waiting for your yes is left alone when main moves: no merge, no check, no review.
+It takes main in once, after you approve, right before it merges, and the check runs once on that result: it passes
+and the task lands (a clean merge needs no new review), or a conflict or a failed check sends it back to its agent.
+
 A clean update is silent. If it changed the commit, the check runs again on the result. The review is not repeated when
-taking main in, clean and apart from its files, is all that happened to work that already passed (below), or when the update touched none of the files
+taking main in cleanly is all that happened to work that already passed (below), or when the update touched none of the files
 the task itself changed: the verdict you already have stands and the task does not ask for your eyes again. A real
 conflict is rolled back at once (your branch and the task's are as they were) and goes straight to the task's agent as a
 plain message: the conflicting files, the target commit, and that it should resolve them in its own worktree and finish
@@ -124,9 +128,9 @@ the board looks at what came after the commit it looked at (fixed, and checked i
 first-parent line):
 
 1. nothing at all: a turn that changed no code (an answer to pull request feedback, say);
-2. merges of main: two parents, the branch as it was and a commit of main. Such a merge wants a look when git could
-   not merge it by itself (conflicts), when it differs from what git makes of it beyond those conflicts, or when
-   main's side changes a file the task changes too;
+2. merges of main: two parents, the branch as it was and a commit of main. Such a merge wants a look only when git
+   could not merge it by itself (conflicts), or when it differs from what git makes of it beyond those conflicts. A
+   clean merge never does, whatever files main's side changed: the check proves it;
 3. anything else (an ordinary commit, another branch merged in) is the agent's own work.
 
 When there is no own work and no merge that wants a look, the board runs the repo's `check` instead of a new review.
@@ -142,7 +146,7 @@ is set` instead of `tests pass`.
 **A later round reviews only what came after the last review.** Its brief still names the whole change, and lists
 what came since the commit the last review stood on: the agent's own commits (one `git log -p --first-parent
 --no-merges` range) and each merge of main that wants a look, with why and how to see it (`git show
---remerge-diff`). Clean merges apart from the task's files are left out: the check covered them. A rebased branch is
+--remerge-diff`). Clean merges are left out: the check covered them. A rebased branch is
 reviewed whole. Some rules live in the head, not in a range (the last commit's message, rules over the whole branch):
 a repo names them in `review.laterChecks`, and every later round checks them anyway. This is fixed behaviour; only
 `review.laterChecks` is a setting.

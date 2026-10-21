@@ -76,6 +76,8 @@ fn resync(tasks: &[Task], socket: &str) {
         // A task that merges by itself is not brought up to date here, with every other one at once: it catches up when
         // its turn to merge comes (finish/line.rs), and so does that only once.
         if setting("merge.by", Some(t)) == json!("itself") && green(t) { continue; }
+        // `merge.catchUp merge`: left alone while it waits; it takes main in once, right before it merges.
+        if setting("merge.catchUp", Some(t)) == json!("merge") { continue; }
         let target = known_target(t, &mut known);
         if !target.is_empty() && (target != t.s("syncSeen") || t.b("syncBlocked")) && now() >= t.i("syncRetryAt") { spawn_runner("sync", t.s("id"), &[]); }
     }
@@ -86,7 +88,7 @@ fn resync(tasks: &[Task], socket: &str) {
 pub fn fetch_mains() {
     let mut done: HashMap<String, bool> = HashMap::new();
     for t in list(ListOpts::default()) {
-        if !resyncable(&t) || tree_of(&t).is_empty() || runner_alive(&t) { continue; }
+        if !resyncable(&t) || tree_of(&t).is_empty() || runner_alive(&t) || setting("merge.catchUp", Some(&t)) == json!("merge") { continue; }
         let root = folder_of(t.s("id"));
         if !via_remote(&root, &t) { continue; }
         let b = main_branch(&root, &t);

@@ -8,5 +8,6 @@ pub mod limits;
 pub mod plan;
 pub mod settings;
 pub mod shared;
+pub mod pace;
 pub mod start;
 pub mod talk;

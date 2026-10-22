@@ -136,10 +136,22 @@ pub fn start_queued(socket: &str) -> Vec<String> {
         let mut busy = all.iter().filter(|t| SLOT_STAGES.contains(&t.s("stage")) && !t.b("autoMerge")).count() as i64; // a remembered auto-merge runs nothing
         let waiting = crate::shown::queue::order(all.iter(), socket); // the order the board says (Q#1, Q#2 …)
         let max = setting("board.agents", None).as_i64().unwrap_or(4);
+        // The Claude spend pacer (actions/pace.rs), read only when a task could start.
+        let mut pace: Option<super::pace::Pace> = None;
         for w in waiting {
             if busy >= max { break; }
+            let p = pace.get_or_insert_with(super::pace::check);
+            if let super::pace::Pace::Hold(line) = p {
+                if !w.b("paceHeld") {
+                    crate::finish::shared::runner_log(w.s("id"), line);
+                    let m = format!("Waiting: Claude spend {}", line.trim_start_matches("pace: hold (spend ").trim_end_matches(')'));
+                    let _ = update(w.s("id"), |t| { if t.s("stage") != "queued" { return Ok(Change::Keep); } t.put("paceHeld", true); t.put("msg", m.clone()); Ok(Change::Write) });
+                }
+                break;
+            }
             let t = update(w.s("id"), |t| { if t.s("stage") != "queued" { return Ok(Change::Keep); } t.put("stage", "starting"); t.put("msg", ""); Ok(Change::Write) })?;
             if t.s("stage") != "starting" { continue; }
+            if let Some(super::pace::Pace::Start(line)) = &pace { crate::finish::shared::runner_log(t.s("id"), line); let _ = update(t.s("id"), |t| { if !t.b("paceHeld") { return Ok(Change::Keep); } t.del("paceHeld"); Ok(Change::Write) }); }
             busy += 1;
             started.push(t.t("id"));
         }

@@ -5,6 +5,7 @@ mod common;
 mod far;
 mod issue_labels;
 mod move_home;
+mod pace;
 mod review_kit;
 mod takeover_kit;
 

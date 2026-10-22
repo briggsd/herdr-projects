@@ -194,7 +194,10 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                 // second one of the branch into another base.
                 let mut own = if named { already::open_pr(t.s("branch"), tp) } else { None };
                 if own.is_none() {
-                    let mut said = if text.is_empty() { t.t("title") } else { text.to_string() };
+                    // The latest closing note, not the words of turns held before it (finish/pr_body.rs).
+                    let latest = if t.b("said") { t.t("said") } else { text.to_string() };
+                    if let Some(why) = super::pr_body::refused(&t, &ch, &latest) { return Err(crate::err::Error::new(format!("prbody:{why}"))); }
+                    let mut said = if latest.is_empty() { t.t("title") } else { latest };
                     // The issue's plain closing line, which the agent's closing message may have left out.
                     if let Some(n) = super::closes::issue_of(&t, &root) {
                         if let Some(b) = super::closes::with_closes(&said, n) { said = b; super::shared::runner_log(id, &format!("pr body: added Closes #{n}")); }
@@ -220,6 +223,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
             Ok(Some(url)) => { note = format!(" Pull request: {url}"); super::pr_labels::copy(id, g, &root); }
             Ok(None) => {}
             Err(e) if is_aborted(&e) => return Err(e),
+            Err(e) if e.msg.starts_with("prbody:") => { super::pr_body::ask(id, g, &e.msg[7..])?; return Ok(()); }
             Err(_) if already::archived(Path::new(&tree)) => { fail(g, already::archived_failure(t.s("branch"), &tree), FailHow::default())?; return Ok(()); }
             Err(e) if e.msg.starts_with("prbase:") => { fail(g, failure("pr", "The agent's pull request merges into another branch", &format!("Branch: {}\nFolder: {tree}\n\n{}", t.s("branch"), &e.msg[7..]), &format!("Change that pull request's base to {0} (gh pr edit <number> --base {0}), or close it, then finish again. The board goes on with it once it merges into {0}.", sync::main_branch(&root, &t))), FailHow::default())?; return Ok(()); }
             // The remote cannot be reached (main could not be fetched either): it waits, and goes on by itself.

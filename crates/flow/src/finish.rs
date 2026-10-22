@@ -18,6 +18,7 @@ pub mod pipeline;
 pub mod review_pace;
 pub mod review_route;
 pub mod pipeline_end;
+pub mod pr_body;
 pub mod pr_labels;
 pub mod recover_job;
 pub mod research;

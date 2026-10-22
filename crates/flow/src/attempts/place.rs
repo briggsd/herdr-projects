@@ -19,7 +19,7 @@ pub fn open_place(api: &Herdr, root: &Path, t: &Task, branch: &str, from: &str) 
         let space = p.as_ref().filter(|p| p.at("link").b("workspace")).and_then(|p| api.workspace_get(p.at("link").s("workspace")));
         let Some(space) = space else {
             let label: String = p.as_ref().map(|p| p.t("title")).unwrap_or_else(|| t.t("title")).chars().take(60).collect();
-            let res = flow::spaces::opening_worktree(api, root, || api.worktree_create(&root.display().to_string(), branch, from, &label))?;
+            let res = crate::delegate::worktree_add::create(api, root, branch, from, &label, &|l| crate::finish::shared::runner_log(t.s("id"), l))?;
             let dir = if res.at("worktree").b("path") { res.at("worktree").t("path") } else { res.at("workspace").at("worktree").t("checkout_path") };
             let ws = res.at("workspace").t("workspace_id");
             update_wait(t.s("attemptOf"), 10000, |p| { p.obj_mut("link").put("workspace", ws.clone()); p.obj_mut("link").put("ownsWorkspace", true); p.put("spaceDir", Path::new(&dir).parent().map(|x| x.display().to_string()).unwrap_or_default()); Ok(Change::Write) })?;

@@ -96,7 +96,7 @@ fn delegate_steps(id: &str, g: &mut Guard, mut t: Task) -> Res<()> {
             }
             let branch = free_branch(&root, &t);
             // An attempt works in a tab of its task's one space; any other task in a space of its own.
-            res = if t.b("attemptOf") { crate::attempts::place::open_place(&api, &root, &t, &branch, &from)? } else { flow::spaces::opening_worktree(&api, &root, || api.worktree_create(&root.display().to_string(), &branch, &from, &label))? };
+            res = if t.b("attemptOf") { crate::attempts::place::open_place(&api, &root, &t, &branch, &from)? } else { super::worktree_add::create(&api, &root, &branch, &from, &label, &|l| crate::finish::shared::runner_log(t.s("id"), l))? };
             let dir = if res.at("worktree").b("path") { res.at("worktree").t("path") } else { res.at("workspace").at("worktree").t("checkout_path") };
             // The repo's own file, read from the commit the worktree starts from: its facts, and what it was refused.
             let (facts, refused) = repo_file(&root, Some(&from));

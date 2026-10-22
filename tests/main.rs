@@ -275,4 +275,5 @@ mod web_select;
 mod web_settings;
 mod web_voice;
 mod workspace_branch;
+mod worktree_add;
 mod workspace_from;

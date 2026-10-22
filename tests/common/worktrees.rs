@@ -22,6 +22,13 @@ pub fn worktree(f: &F, st: &mut Value, verb: &str, flag: &dyn Fn(&str) -> Option
             let ds = dest.display().to_string();
             let exists = git(&root, &["rev-parse", "--verify", &format!("refs/heads/{branch}")]).is_ok();
             let base = flag("--base").unwrap_or_else(|| "HEAD".into());
+            // git writing the new branch's upstream while another git command held .git/config.lock: the branch is
+            // made, the worktree is not (FL-331)
+            if st.i("worktreeLocked") > 0 && !exists {
+                st["worktreeLocked"] = json!(st.i("worktreeLocked") - 1);
+                let _ = git(&root, &["branch", "--no-track", &branch, &base]);
+                return fail("worktree_create_failed", &format!("Preparing worktree (new branch '{branch}')\nerror: could not lock config file .git/config: File exists\nerror: unable to write upstream branch configuration"));
+            }
             let r = if exists { git(&root, &["worktree", "add", &ds, &branch]) } else { git(&root, &["worktree", "add", "--no-track", "-b", &branch, &ds, &base]) };
             if let Err(e) = r { return fail("worktree_create_failed", &e); }
             let rs = root.display().to_string();

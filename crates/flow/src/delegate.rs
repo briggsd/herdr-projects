@@ -6,6 +6,7 @@ pub mod jobs;
 pub mod launch;
 pub mod rules;
 pub mod worktree;
+pub mod worktree_add;
 pub use jobs::{delegate_job, reopen, restart_job};
 pub use launch::{agent_name, launch_extras, resumable, start_agent};
 pub use rules::{first_prompt, rules, task_line, turned_words, WAIT_RULE};

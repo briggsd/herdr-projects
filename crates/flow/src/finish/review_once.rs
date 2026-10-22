@@ -124,6 +124,7 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
         let every = ms("HERDR_PROJECTS_POLL_MS", 3000);
         let (mut sent, mut sent_at, mut quiet_since, mut comp_at_send) = (false, 0i64, 0i64, Value::Null);
         let mut waited: Vec<i64> = vec![]; // its own turn-end reports while its helpers were still at work
+        let mut holds = 0i64; // its turn ends held for a job of its own still running
         // Its turn ended while helpers it started are still at work (agents/helpers.rs): their answers start it again.
         let helpers_at_work = |ev: Option<&Value>| { let w = why_stopped(&get(id).unwrap_or(t.clone()), "reviewer", ev); w.turn.as_ref().map(|x| x.error.is_empty()).unwrap_or(false) && still_at_work(&w.kind, w.turn.as_ref(), started_at) };
         // The reviewer ended its turn with no verdict. Its saved conversation says why.
@@ -156,6 +157,14 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
                 sleep(every.min(1500));
                 if verdict_file.exists() { continue; }
                 if helpers_at_work(Some(r)) { waited.push(r.i("n")); continue; }
+                // A job of its own still running (finish/turn_hold.rs): told once to wait for it and write the verdict.
+                if let Some(words) = super::turn_hold::reviewer_hold(id, &t, &pane, &rkind, round, holds) {
+                    holds += 1; waited.push(r.i("n"));
+                    match crate::submit::hand(&api, &pane, &words) {
+                        Ok(_) => { crate::store::said_by::note_board(id, &words); continue; }
+                        Err(e) => super::shared::runner_log(id, &format!("review {round}: turn end not held: the reviewer could not be told ({})", e.message)),
+                    }
+                }
                 error = no_verdict(Some(r), ""); ended = true; break;
             }
             let a = api.agent_get(&pane).ok().flatten();

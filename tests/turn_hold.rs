@@ -81,3 +81,36 @@ fn a_process_gone_by_the_time_it_is_read_or_a_second_later_holds_nothing() {
         assert_eq!(told.len(), 1, "{pane}: {told:?}");
     }
 }
+
+/// A reviewer whose turn ends with no verdict while a job of its own runs (FL-303): its review, runner.log and what
+/// the reviewer was told.
+fn reviewed(reviewer: Value) -> (sw::store::tasks::Task, String, Vec<String>) {
+    let w = world_with(Opts { repo: true, settings: json!({ "worker.agent": "claude", "reviewer.agent": "claude", "review.when": "always" }), ..Default::default() });
+    w.script(json!({ "worker": [{ "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Did v1." }], "reviewer": reviewer }));
+    let id = w.add("Fix the thing");
+    delegate(&id);
+    let t = settle(&id);
+    let log = std::fs::read_to_string(sw::store::files::dir_of(&id).join("runner.log")).unwrap_or_default();
+    let told: Vec<String> = calls(&w).into_iter().filter(|c| c.starts_with("agent prompt") && c.contains("Your turn ended with no verdict")).collect();
+    (t, log, told)
+}
+
+#[test]
+fn a_reviewer_turn_ended_with_no_verdict_and_its_job_running_is_held_then_goes_on_when_the_job_ends() {
+    let (t, log, told) = reviewed(json!([
+        { "hook": true, "pane": running() },
+        { "verdict": { "meets": true, "findings": [], "text": "Looks right." }, "pane": none() },
+    ]));
+    assert_eq!(t.s("stage"), "approval", "the review passed, not failed: {} {}", t.s("msg"), t.at("failure"));
+    assert_eq!(t.i("reviewRound"), 1, "one review, not run again: {log}");
+    assert!(log.contains("review 1: turn end held: 2 process 2"), "{log}");
+    assert_eq!(told.len(), 1, "told once: {told:?}");
+    assert!(told[0].contains("process 2 (pid 2)") && told[0].contains("write the verdict file"), "{}", told[0]);
+}
+
+#[test]
+fn a_reviewer_turn_ended_with_no_verdict_and_nothing_running_fails_as_before() {
+    let (t, log, told) = reviewed(json!([{ "hook": true, "pane": none() }, { "verdict": { "meets": true, "findings": [], "text": "Looks right." } }]));
+    assert!(told.is_empty() && !log.contains("turn end held"), "{log}");
+    assert!(log.contains("review 1:") && t.i("reviewRound") >= 1, "{log}");
+}

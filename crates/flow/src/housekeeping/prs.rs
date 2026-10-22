@@ -188,6 +188,7 @@ fn poll_one(id: &str, pr: &str, j: &Value, via: &str) {
     match then {
         Then::Merged => {
             tell_sidebar(&t);
+            crate::land::issue_labels::clear(id, &t);
             crate::land::cleanup::cleanup_job(id, mode);
             let t = get(id).unwrap_or(t);
             drop_remote_branch(&root, t.s("branch"), &if mode == "always" { if head.is_empty() { t.t("prHead") } else { head.clone() } } else { String::new() });

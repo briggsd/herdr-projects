@@ -6,6 +6,7 @@
 pub mod checks;
 pub mod cleanup;
 pub mod expected;
+pub mod issue_labels;
 pub mod merge;
 pub mod readable;
 pub mod triggers;

@@ -57,6 +57,7 @@ fn landed(id: &str, g: &mut Guard, t: &Task, msg: &str, head: &str, commit: &str
         if t.b("pr") { t.put("prMerged", true); t.put("prState", "merged"); }
     })?;
     flow::sidebar::tell_sidebar(&d);
+    super::issue_labels::clear(id, &d);
     tidy(id, "always");
     Ok(())
 }

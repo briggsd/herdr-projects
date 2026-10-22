@@ -84,6 +84,7 @@ impl FakeGh {
                 let n = self.views.get(); self.views.set(n + 1);
                 if c.b("issueFail") { fail("HTTP 502") } else if c.at("labelsLater").is_object() && n >= c.at("labelsLater").i("after") { ok(&strings(c.at("labelsLater").at("labels")).join("\n")) } else { ok(&strings(c.at("labels")).join("\n")) }
             }
+            ("issue", "edit") => if c.b("issueEditFail") { fail("HTTP 403: could not remove label") } else { ok("") },
             ("pr", "edit") => if c.b("editFail") { fail("HTTP 422: could not add label") } else { ok("") },
             ("repo", "view") => ok(if c.b("archived") { "true" } else { "false" }),
             ("run", "view") => if c.b("log") { ok(c.s("log")) } else { fail("log not found") },

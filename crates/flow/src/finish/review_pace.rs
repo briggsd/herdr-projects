@@ -37,10 +37,10 @@ pub fn pace(ch: &Obj, has: &[String]) -> Option<Route> {
         let a = fallback();
         return Some(Route { agent: (!a.is_empty()).then_some(a), why: "pace: no reading yet".into() });
     };
-    if r.used < r.elapsed + MARGIN { return codex(format!("pace: used {:.0}% < elapsed {:.0}%", r.used, r.elapsed)); }
+    if r.used < r.elapsed + MARGIN { return codex(format!("pace: used {:.0}% < elapsed {:.0}% + {MARGIN:.0}", r.used, r.elapsed)); }
     let a = fallback();
-    if a.is_empty() { return codex(format!("pace: used {:.0}% >= elapsed {:.0}%, but no usable reviewer.fallback agent", r.used, r.elapsed)); }
-    Some(Route { agent: Some(a), why: format!("pace: used {:.0}% >= elapsed {:.0}%", r.used, r.elapsed) })
+    if a.is_empty() { return codex(format!("pace: used {:.0}% >= elapsed {:.0}% + {MARGIN:.0}, but no usable reviewer.fallback agent", r.used, r.elapsed)); }
+    Some(Route { agent: Some(a), why: format!("pace: used {:.0}% >= elapsed {:.0}% + {MARGIN:.0}", r.used, r.elapsed) })
 }
 
 fn codex_home() -> PathBuf { std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".codex")) }

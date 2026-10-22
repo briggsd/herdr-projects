@@ -45,8 +45,8 @@ fn under_pace_codex_reviews_every_round_at_its_efforts() {
         let w = world(); codex_says(&w, 20.0, 50.0, 60);
         let log = run(&w, json!([kind, "p2"]), json!([failing(), passing()]));
         assert_eq!(kinds(&w), vec!["codex", "codex"], "{kind}: {log}");
-        assert!(log.contains("review 1: reviewer codex (pace: used 20% < elapsed 50%)") && log.contains("review 1: effort high"), "{log}");
-        assert!(log.contains("review 2: reviewer codex (pace: used 20% < elapsed 50%)") && log.contains("review 2: effort medium"), "laterEffort: {log}");
+        assert!(log.contains("review 1: reviewer codex (pace: used 20% < elapsed 50% + 5)") && log.contains("review 1: effort high"), "{log}");
+        assert!(log.contains("review 2: reviewer codex (pace: used 20% < elapsed 50% + 5)") && log.contains("review 2: effort medium"), "laterEffort: {log}");
     }
 }
 
@@ -55,7 +55,7 @@ fn over_pace_claude_reviews() {
     let w = world(); codex_says(&w, 80.0, 50.0, 60);
     let log = run(&w, json!(["kind:faithful"]), json!([failing(), passing()]));
     assert_eq!(kinds(&w), vec!["claude", "claude"], "{log}");
-    assert!(log.contains("review 1: reviewer claude (pace: used 80% >= elapsed 50%)") && log.contains("review 1: effort default"), "{log}");
+    assert!(log.contains("review 1: reviewer claude (pace: used 80% >= elapsed 50% + 5)") && log.contains("review 1: effort default"), "{log}");
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn a_stale_reading_sends_one_review_to_codex_and_the_next_is_paced_on_it() {
     let log = run(&w, json!(["kind:faithful"]), json!([failing(), passing()]));
     assert_eq!(kinds(&w), vec!["codex", "claude"], "{log}");
     assert!(log.contains("review 1: reviewer codex (pace: reading 120m old, one review to refresh it)"), "{log}");
-    assert!(log.contains("review 2: reviewer claude (pace: used 80% >= elapsed 50%)"), "one only: {log}");
+    assert!(log.contains("review 2: reviewer claude (pace: used 80% >= elapsed 50% + 5)"), "one only: {log}");
 }
 
 #[test]
@@ -82,5 +82,5 @@ fn a_paced_claude_review_cut_off_falls_back_to_codex() {
     let w = cut_world("30,30", paced()); codex_says(&w, 80.0, 50.0, 60);
     let log = run(&w, json!(["kind:faithful"]), json!([{ "ends": "claude-usage-limit-made" }, passing()]));
     assert_eq!(kinds(&w), vec!["claude", "codex"], "{log}");
-    assert!(log.contains("review 1: reviewer claude (pace: used 80% >= elapsed 50%)") && log.contains("codex, the routed review's last resort, reviews"), "{log}");
+    assert!(log.contains("review 1: reviewer claude (pace: used 80% >= elapsed 50% + 5)") && log.contains("codex, the routed review's last resort, reviews"), "{log}");
 }

@@ -7,8 +7,9 @@ use serde_json::{json, Value};
 use sw::json::*;
 
 /// The body the board opened the pull request with, the task's runner.log, and what the worker was told.
-fn opened(steps: Value) -> (String, String, Vec<String>) {
-    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "review.when": "never", "pr.bodyNeeds": ["Checked:"], "pr.bodyRefuses": ["no PR yet"] }), ..Default::default() });
+fn opened(steps: Value) -> (String, String, Vec<String>) { opened_by("pi", steps) }
+fn opened_by(agent: &str, steps: Value) -> (String, String, Vec<String>) {
+    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": agent, "review.when": "never", "pr.bodyNeeds": ["Checked:"], "pr.bodyRefuses": ["no PR yet"] }), ..Default::default() });
     w.script(json!({ "worker": steps }));
     let id = w.add("Fix the thing");
     delegate(&id);
@@ -48,4 +49,24 @@ fn refused_once_only_the_next_note_opens_it_as_it_is() {
     assert_eq!(log.matches("body refused").count(), 1, "{log}");
     assert_eq!(told.len(), 2, "{told:?}");
     assert_eq!(body, "Still no checked line.");
+}
+
+#[test]
+fn a_last_message_that_is_not_a_body_gives_way_to_the_turns_closing_note() {
+    // FL-315: the closing note is in closing-note.md, and the last message only says so
+    let (body, log, told) = opened_by("claude", json!([{ "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: tools/check.sh passes.", "ends": "claude-finished-made", "hook": true }]));
+    assert_eq!(body, "Fixed it.\n\nChecked: tools/check.sh passes.");
+    assert!(log.contains("pr body: from closing-note.md") && !log.contains("body refused"), "{log}");
+    assert_eq!(told.len(), 1, "{told:?}");
+}
+
+#[test]
+fn neither_a_body_the_message_is_refused_as_before() {
+    let (body, log, told) = opened_by("claude", json!([
+        { "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.", "ends": "claude-finished-made", "hook": true },
+        { "note": "Fixed it.\n\nChecked: tools/check.sh passes.", "ends": "claude-finished-made", "hook": true },
+    ]));
+    assert!(log.contains("pr open: body refused (no Checked)"), "{log}");
+    assert_eq!(body, "Fixed it.\n\nChecked: tools/check.sh passes.");
+    assert_eq!(told.len(), 2, "{told:?}");
 }

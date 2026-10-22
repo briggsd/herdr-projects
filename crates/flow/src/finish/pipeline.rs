@@ -195,7 +195,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                 let mut own = if named { already::open_pr(t.s("branch"), tp) } else { None };
                 if own.is_none() {
                     // The latest closing note, not the words of turns held before it (finish/pr_body.rs).
-                    let latest = if t.b("said") { t.t("said") } else { text.to_string() };
+                    let latest = super::pr_body::latest(id, &t, &ch, if t.b("said") { t.t("said") } else { text.to_string() });
                     if let Some(why) = super::pr_body::refused(&t, &ch, &latest) { return Err(crate::err::Error::new(format!("prbody:{why}"))); }
                     let mut said = if latest.is_empty() { t.t("title") } else { latest };
                     // The issue's plain closing line, which the agent's closing message may have left out.

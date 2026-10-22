@@ -19,8 +19,12 @@ fn approve_refuses_to_merge_work_that_changed_after_its_review_the_finish_line_r
     std::fs::write(std::path::Path::new(t.s("worktree")).join("extra.txt"), "late\n").unwrap(); // dirty tree behind the approval, no herdr event
     sw::actions::finish_line::approve(&id, None, false).unwrap();
     let t = settle(&id);
-    assert_eq!(t.s("stage"), "done", "{}", t.at("failure"));
-    assert_eq!(read(&w.root.join("extra.txt")), "late\n"); // committed, re-reviewed, then merged
+    // committed and re-reviewed; the approval was not for it (finish/approval_kept.rs), so it asks again
+    assert_eq!(t.s("stage"), "approval", "{}", t.at("failure"));
+    assert!(!t.b("mergeIntent") && t.s("msg").contains("Changed after your approval: "), "{}", t.s("msg"));
+    sw::actions::finish_line::approve(&id, None, false).unwrap();
+    assert_eq!(settle(&id).s("stage"), "done");
+    assert_eq!(read(&w.root.join("extra.txt")), "late\n");
 }
 
 #[test]

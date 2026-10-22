@@ -136,6 +136,15 @@ pub fn after_review(c: Ctx, g: &mut Guard) -> Res<()> {
             return Ok(());
         }
         let stat = change.as_ref().map(|x| x.at("stat").clone()).unwrap_or(Value::Null);
+        // Commits of its own since you approved (finish/approval_kept.rs): your approval was not for them.
+        let own = super::approval_kept::own_since(&t, c.folder, c.root, &head);
+        if !own.is_empty() {
+            super::shared::runner_log(id, &format!("approval dropped: {} commit{} after it: {}", own.len(), if own.len() == 1 { "" } else { "s" }, own.join("; ")));
+            let note = format!("{} Changed after your approval: {}.", c.note, own.join("; "));
+            t = g.set(|t| { t.put("review", review.clone().unwrap_or(Value::Null)); t.put("stat", stat.clone()); t.put("reviewedHead", head_v.clone()); t.put("mergeIntent", Value::Null); t.put("requireApproval", true); t.put("stage", "approval"); let m = approval_message_with(t, &note); t.put("msg", m); })?;
+            flow::sidebar::tell_sidebar(&t);
+            return Ok(());
+        }
         t = g.set(|t| { t.put("review", review.clone().unwrap_or(Value::Null)); t.put("stat", stat.clone()); t.put("reviewedHead", head_v.clone()); t.obj_mut("mergeIntent").put("verifiedHead", head_v.clone()); })?;
         if hold_pr_failure(g, &t)? { return Ok(()); }
         g.set(|t| { t.put("stage", "merging"); t.put("msg", "Merging"); })?;

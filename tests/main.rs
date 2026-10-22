@@ -205,6 +205,7 @@ mod research_start;
 mod retry;
 mod retry_agent;
 mod review_later_effort;
+mod approval_moved;
 mod claude_model;
 mod compact_fix;
 mod review_pace;

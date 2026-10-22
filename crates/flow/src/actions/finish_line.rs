@@ -51,7 +51,7 @@ pub fn approve(id: &str, seen: Option<(Value, Value)>, anyway: bool) -> Res<Said
         if t.b("syncBlocked") { crate::fail!("{} is behind main and cannot be approved yet: {}. The board keeps trying to bring it up to date.", t.s("id"), t.at("syncBlocked").s("why")); }
         if runner_alive(t) { crate::fail!("{} is busy. Try again in a moment.", t.s("id")); }
         t.put("stage", "merging"); t.put("msg", "Merging"); t.put("requireApproval", false); t.put("since", now()); t.put("mergeFailed", false);
-        let mut mi = json!({ "approvedAt": now(), "repairs": t.at("mergeIntent").i("repairs"), "verifiedHead": t.at("reviewedHead") });
+        let mut mi = json!({ "approvedAt": now(), "repairs": t.at("mergeIntent").i("repairs"), "verifiedHead": t.at("reviewedHead"), "approvedHead": t.at("reviewedHead") });
         // Merged in spite of GitHub's failed checks: they are not looked at again for this merge.
         if checks.is_some() { mi["anyway"] = json!(true); t.put("prFailure", Value::Null); }
         t.put("mergeIntent", mi); t.put("checksWait", Value::Null);

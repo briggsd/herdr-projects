@@ -52,7 +52,7 @@ fn checks_still_running_the_merge_waits_and_says_so_then_merges_once_they_pass()
 }
 
 #[test]
-fn failed_checks_go_back_to_the_agent_with_the_name_and_the_log_and_the_approval_carries_the_repair_through() {
+fn failed_checks_go_back_to_the_agent_with_the_name_and_the_log_and_the_repair_asks_for_approval_again() {
     let w = pr_world(json!({}));
     let id = to_approval(&w, "CI fails at the merge");
     let head = task(&id).t("prHead");
@@ -67,13 +67,14 @@ fn failed_checks_go_back_to_the_agent_with_the_name_and_the_log_and_the_approval
     assert!(sent.contains("build (failure)") && sent.contains("test parses_flags ... FAILED\nerror: 1 test failed"), "{sent}");
     assert!(gh_log(&w).contains("run view --job 22 --log-failed"));
     assert!(!merged(&w));
-    assert_eq!(t.s("stage"), "approval"); assert_eq!(t.i("prRounds"), 1); assert!(t.b("mergeIntent"), "the approval you gave carries the repair");
-    assert!(t.s("msg").contains("pull request still blocked"), "{}", t.s("msg"));
+    assert_eq!(t.s("stage"), "approval"); assert_eq!(t.i("prRounds"), 1); assert!(!t.b("mergeIntent"), "the approval you gave was not for the repair");
+    assert!(t.s("msg").contains("Changed after your approval: ") && t.s("msg").contains("fix"), "{}", t.s("msg"));
     let fixed = t.t("prHead");
     assert_ne!(fixed, head);
     assert!(sw::land::checks::failed_on(&t).is_none(), "a new commit is not refused for the old one's checks");
     w.gh_says(json!({ "view": passed(&fixed) }));
     poll_prs();
+    finish_line::approve(&id, None, false).unwrap();
     let t = settle(&id);
     assert_eq!(t.s("stage"), "done", "{}", t.at("failure")); assert!(merged(&w));
 }

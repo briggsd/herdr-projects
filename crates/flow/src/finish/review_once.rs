@@ -75,8 +75,16 @@ pub fn review_once(id: &str, g: &mut Guard, text: &str, change: Option<&Value>, 
     // From the second round on, the reviewer's own program may review at another effort (reviewer.laterEffort).
     let later = ch.t("reviewer.laterEffort");
     if round >= 2 && plan.is_none() && !other && !later.is_empty() && later != "same" { reffort = later; }
+    // A first round over a change of many files may review at another effort (reviewer.bigFiles, reviewer.bigEffort).
+    let (big, big_effort) = (ch.i("reviewer.bigFiles"), ch.t("reviewer.bigEffort"));
+    let mut sized = String::new();
+    if round == 1 && plan.is_none() && to_land && !other && big > 0 && !big_effort.is_empty() && big_effort != "same" {
+        let range = change.map(|c| c.t("range")).unwrap_or_default();
+        let n = if range.is_empty() { 0 } else { git_out(&folder, &["diff", "--name-only", &range]).map(|s| s.lines().filter(|l| !l.is_empty()).count() as i64).unwrap_or(0) };
+        if n > big { reffort = big_effort; sized = format!(" ({n} files > {big})"); }
+    }
     if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: reviewer {shown}{}", if why.is_empty() { String::new() } else { format!(" ({why})") })); }
-    if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: effort {}", if reffort.is_empty() { "default" } else { &reffort })); }
+    if plan.is_none() { super::shared::runner_log(id, &format!("review {round}: effort {}{sized}", if reffort.is_empty() { "default" } else { &reffort })); }
     let note = if let Some(a) = &routed.agent { Some(if routed.why.starts_with("round") { format!("reviewed by {a}: reviewer.laterAgent, from round 2") } else { format!("reviewed by {a}: the issue is {}", routed.why) }) } else if rkind != who.kind && !t.b("reviewerOn") && stand_in.is_empty() { Some(format!("reviewed by {rkind}: {} is not installed here", who.kind)) } else { None };
     let was = t.t("reviewSession"); // a review started again: the conversation of the try before is not this one's
     t = g.set(|t| { if plan.is_none() { keep_saved_review(t); t.put("reviewRound", round); } t.put("reviewSession", Value::Null); t.put("reviewRouted", routed.agent.as_ref().map(|_| Value::from(routed.why.clone())).unwrap_or(Value::Null)); let f = t.obj_mut("fallbacks"); match &note { Some(n) => f.put("reviewer", n.clone()), None => f.del("reviewer") } })?;

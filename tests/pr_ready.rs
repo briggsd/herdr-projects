@@ -40,6 +40,7 @@ fn a_failing_body_goes_back_to_the_worker_before_any_review() {
     assert!(log.contains("pr body: synced from the closing note"), "{log}");
     assert_eq!(told.len(), 2, "{told:?}");
     assert!(told[1].contains("pr_ready: the PR body has no \"Claims checked:\" line") && !told[1].contains("warn"), "{}", told[1]);
+    assert!(told[1].contains("/closing-note.md as the whole pull request body") && told[1].contains("don't run gh pr edit and don't summarise it in your reply"), "{}", told[1]);
     assert!(gh.contains("pr edit 7 --body Fixed it.\n\nChecked: passes.\n\nClaims checked: none new."), "{gh}");
 }
 

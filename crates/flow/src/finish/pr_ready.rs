@@ -40,7 +40,8 @@ pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep
                 return Ok(false);
             }
             runner_log(id, &format!("pr_ready: {} line{} sent", bad.len(), if bad.len() == 1 { "" } else { "s" }));
-            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed:\n\n{}\n\nFix what these lines name. The board puts your closing note into the pull request's body, so write your closing note again as the whole body with them fixed (in closing-note.md, if you keep it there); fix and commit anything else they name. Then end your turn. The board checks it again and then asks for the review.", bad.join("\n"));
+            let note = crate::flow::task::note_file(&g.check()?);
+            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed on the body or the commits:\n\n{}\n\nFix the body lines by rewriting {} as the whole pull request body. The board copies that file into the pull request, so don't run gh pr edit and don't summarise it in your reply. Fix any commit lines with a new commit. Then end your turn; the board checks it again before the review.", bad.join("\n"), note.display());
             let keep = keep_intent || g.check()?.b("mergeIntent");
             crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadySent": sent + 1, "prReadySentAt": crate::clock::now() })), 0)?;
             Ok(true)

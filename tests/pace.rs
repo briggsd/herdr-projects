@@ -46,3 +46,10 @@ fn prometheus_not_answering_starts_it_and_says_why() {
     assert_ne!(settle(&id).s("stage"), "queued");
     assert!(log_of(&id).contains("pace: start (spend not read: curl: (7)"), "{}", log_of(&id));
 }
+
+#[test]
+fn skipped_projects_sessions_are_left_out_of_the_query() {
+    assert_eq!(sw::actions::pace::query(3, &["none".into()]), "sum(increase(claude_code_cost_usage_USD_total[3h])) / 3");
+    assert_eq!(sw::actions::pace::query(3, &["hearth".into(), "a.b".into()]),
+        r#"sum(sum by (session_id) (increase(claude_code_cost_usage_USD_total[3h])) unless on(session_id) claude_session_project{project=~"hearth|a\\.b"}) / 3"#);
+}

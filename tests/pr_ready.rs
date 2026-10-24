@@ -95,6 +95,7 @@ fn a_round_with_no_new_note_leaves_the_body_alone() {
         { "files": { "f.txt": "v2\n" }, "commit": "typo" },
     ]), json!([failing, passing()]));
     assert!(log.contains("review 2") && !log.contains("pr body: synced"), "{log}");
+    assert!(!log.contains("left alone"), "no note, nothing said: {log}");
     assert!(!gh.contains("pr edit 7 --body"), "{gh}");
 }
 
@@ -106,5 +107,6 @@ fn a_fix_rounds_note_that_is_no_body_leaves_the_body_alone() {
         { "files": { "f.txt": "v2\n" }, "commit": "typo", "inTurnNote": "Round 2: fixed the typo.", "ends": "claude-finished-made", "hook": true },
     ]), json!([failing, passing()]));
     assert!(log.contains("review 2") && !log.contains("pr body: synced") && !log.contains("body refused"), "{log}");
+    assert_eq!(log.matches("pr body: note is not a whole body, left alone").count(), 1, "{log}");
     assert!(!gh.contains("pr edit 7 --body"), "{gh}");
 }

@@ -215,7 +215,14 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                 // A later turn: a closing note written since the body was (pr_ready sent its lines back, or a fix round
                 // whose note is a whole body, finish/pr_body.rs: is_body) is the body now, and pr_ready checks it again before each review (FL-424, FL-431).
                 let since = if t.b("prBodyAt") { t.f("prBodyAt") } else if t.b("prReadyPending") { t.f("prReadySentAt") } else { t.f("armedAt") };
-                if t.b("prReadyPending") || super::pr_body::note_since(&t, since).is_some_and(|n| super::pr_body::is_body(&t, &ch, &n)) {
+                let fresh = super::pr_body::note_since(&t, since);
+                let whole = fresh.as_deref().is_some_and(|n| super::pr_body::is_body(&t, &ch, n));
+                // Said once a note, for counting stale bodies that come from this skip (fl-friction #1409).
+                if let Some(n) = fresh.as_deref().filter(|_| !whole && !t.b("prReadyPending")).filter(|n| t.t("prBodyLeft") != *n) {
+                    super::shared::runner_log(id, "pr body: note is not a whole body, left alone");
+                    let n = n.to_string(); g.set(|t| t.put("prBodyLeft", n.clone()))?;
+                }
+                if t.b("prReadyPending") || whole {
                     let body = super::pr_body::compose(id, &t, &ch, &root, text, Some(since)).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
                     let r = flow::git::gh(&["pr", "edit", &flow::git::pr_number(&url), "--body", &body], tp, 120000);
                     super::shared::runner_log(id, &if r.status == 0 { "pr body: synced from the closing note".to_string() } else { format!("pr body: not synced ({})", r.stderr.trim()) });

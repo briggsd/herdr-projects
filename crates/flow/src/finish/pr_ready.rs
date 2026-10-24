@@ -18,6 +18,11 @@ const RUN_MS: u64 = 180000;
 pub fn failing(out: &str) -> Vec<String> {
     out.lines().map(str::trim_end).filter(|l| l.starts_with("pr_ready: ")).map(String::from).collect()
 }
+/// The repo's own line said with them (`pr.readyAlso`), with its leading space.
+fn also(ch: &Obj) -> String {
+    let a = ch.t("pr.readyAlso");
+    if a.trim().is_empty() || a.trim() == "none" { String::new() } else { format!(" {}", a.trim()) }
+}
 /// Whether the failing lines went back to the agent: the review waits for its next turn.
 pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep_intent: bool) -> Res<bool> {
     let pending = g.check()?.b("prReadyPending");
@@ -42,7 +47,7 @@ pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep
             }
             runner_log(id, &format!("pr_ready: {} line{} sent", bad.len(), if bad.len() == 1 { "" } else { "s" }));
             let note = crate::flow::task::note_file(&g.check()?);
-            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed on the body or the commits:\n\n{}\n\nFix the body lines by rewriting {} as the whole pull request body. The board copies that file into the pull request, so don't run gh pr edit and don't summarise it in your reply. Fix any commit lines with a new commit. Then end your turn; the board checks it again before the review.", bad.join("\n"), note.display());
+            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed on the body or the commits:\n\n{}\n\nFix the body lines by rewriting {} as the whole pull request body. The board copies that file into the pull request, so don't run gh pr edit and don't summarise it in your reply. Fix any commit lines with a new commit.{} Then end your turn; the board checks it again before the review.", bad.join("\n"), note.display(), also(ch));
             let keep = keep_intent || g.check()?.b("mergeIntent");
             crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadySent": sent + 1, "prReadySentAt": crate::clock::now() })), 0)?;
             Ok(true)

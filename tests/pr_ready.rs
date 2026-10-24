@@ -14,7 +14,7 @@ fn passing() -> Value { json!({ "verdict": { "meets": true, "findings": [], "tex
 fn finished(script: &str, steps: Value) -> (String, Vec<String>, String) { finished_by("pi", script, steps) }
 fn finished_by(agent: &str, script: &str, steps: Value) -> (String, Vec<String>, String) { reviewed_by(agent, script, steps, json!([passing()])) }
 fn reviewed_by(agent: &str, script: &str, steps: Value, reviews: Value) -> (String, Vec<String>, String) {
-    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": agent, "review.when": "always", "pr.bodyNeeds": ["Checked:"] }), ..Default::default() });
+    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": agent, "review.when": "always", "pr.bodyNeeds": ["Checked:"], "pr.readyAlso": "Re-read each added sentence." }), ..Default::default() });
     let id = w.add("Fix the thing");
     let mut steps = steps;
     steps[0]["files"]["tools/pr_ready.sh"] = json!(script);
@@ -41,6 +41,7 @@ fn a_failing_body_goes_back_to_the_worker_before_any_review() {
     assert!(log.contains("pr body: synced from the closing note"), "{log}");
     assert_eq!(told.len(), 2, "{told:?}");
     assert!(told[1].contains("pr_ready: the PR body has no \"Claims checked:\" line") && !told[1].contains("warn"), "{}", told[1]);
+    assert!(told[1].contains("with a new commit. Re-read each added sentence. Then end your turn"), "{}", told[1]);
     assert!(told[1].contains("/closing-note.md as the whole pull request body") && told[1].contains("don't run gh pr edit and don't summarise it in your reply"), "{}", told[1]);
     assert!(gh.contains("pr edit 7 --body Fixed it.\n\nChecked: passes.\n\nClaims checked: none new."), "{gh}");
 }

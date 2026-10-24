@@ -178,6 +178,7 @@ mod plan_sandbox;
 mod plan_steps;
 mod plan_untouched;
 mod pr_body;
+mod pr_ready;
 mod pr_closes;
 mod pull_requests;
 mod pull_requests_actions_only;

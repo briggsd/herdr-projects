@@ -176,6 +176,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
     if !tree.is_empty() && ch.b("merge.pr") && !research && why.is_none() {
         let tp = Path::new(&tree);
         let base = [t.s("baseSha"), t.s("from")].into_iter().find(|s| !s.is_empty()).unwrap_or("HEAD").to_string();
+        let mut ready = false; // a pull request whose body the board just wrote: pr_ready runs on it
         let pushed = (|| -> Res<Option<String>> {
             let has_commits = git_out(tp, &["rev-list", "--count", &format!("{base}..HEAD")])?.parse::<i64>().unwrap_or(0) > 0;
             if !(has_commits && flow::git::has_origin(&root)) { return Ok(None); }
@@ -195,14 +196,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                 let mut own = if named { already::open_pr(t.s("branch"), tp) } else { None };
                 if own.is_none() {
                     // The latest closing note, not the words of turns held before it (finish/pr_body.rs).
-                    let latest = super::pr_body::latest(id, &t, &ch, if t.b("said") { t.t("said") } else { text.to_string() });
-                    if let Some(why) = super::pr_body::refused(&t, &ch, &latest) { return Err(crate::err::Error::new(format!("prbody:{why}"))); }
-                    let mut said = if latest.is_empty() { t.t("title") } else { latest };
-                    // The issue's plain closing line, which the agent's closing message may have left out.
-                    if let Some(n) = super::closes::issue_of(&t, &root) {
-                        if let Some(b) = super::closes::with_closes(&said, n) { said = b; super::shared::runner_log(id, &format!("pr body: added Closes #{n}")); }
-                    }
-                    let body = format!("{said}\n\nTask: {}", task_ref(id, &repo_keys()));
+                    let body = super::pr_body::compose(id, &t, &ch, &root, text).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
                     let mut args = vec!["pr", "create", "--draft", "--head", t.s("branch"), "--title", if t.b("title") { t.s("title") } else { id }, "--body", &body];
                     if let Some(b) = &onto { args.extend(["--base", b.as_str()]); }
                     let r = flow::git::gh(&args, tp, 120000);
@@ -210,17 +204,27 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                     // The agent opened one itself for this branch: the board goes on with that one.
                     if url.is_empty() { own = already::open_pr(t.s("branch"), tp); }
                     if url.is_empty() && own.is_none() { return Err(crate::err::Error::new(format!("pr:{}", [r.stdout.trim(), r.stderr.trim()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n")))); }
+                    if !url.is_empty() { ready = true; }
                 }
                 if let Some(p) = own {
                     if let Some(why) = onto.as_deref().and_then(|b| already::wrong_base(&p, b)) { return Err(crate::err::Error::new(format!("prbase:{why}"))); }
                     url = p.url;
                 }
                 g.set(|t| { t.put("pr", url.clone()); t.put("prSeen", ""); t.put("prState", "waiting"); })?;
+            } else if t.b("prReadyPending") {
+                // pr_ready sent its lines back: the agent's new closing note is the body now, checked again.
+                let body = super::pr_body::compose(id, &t, &ch, &root, text).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
+                let r = flow::git::gh(&["pr", "edit", &flow::git::pr_number(&url), "--body", &body], tp, 120000);
+                super::shared::runner_log(id, &if r.status == 0 { "pr body: synced from the closing note".to_string() } else { format!("pr body: not synced ({})", r.stderr.trim()) });
+                ready = true;
             }
             Ok(Some(url))
         })();
         match pushed {
-            Ok(Some(url)) => { note = format!(" Pull request: {url}"); super::pr_labels::copy(id, g, &root); }
+            Ok(Some(url)) => {
+                note = format!(" Pull request: {url}"); super::pr_labels::copy(id, g, &root);
+                if ready && super::pr_ready::sent_back(id, g, &ch, tp, &url, keep_intent)? { return Ok(()); }
+            }
             Ok(None) => {}
             Err(e) if is_aborted(&e) => return Err(e),
             Err(e) if e.msg.starts_with("prbody:") => { super::pr_body::ask(id, g, &e.msg[7..])?; return Ok(()); }

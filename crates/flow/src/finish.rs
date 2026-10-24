@@ -20,6 +20,7 @@ pub mod review_route;
 pub mod pipeline_end;
 pub mod pr_body;
 pub mod pr_labels;
+pub mod pr_ready;
 pub mod recover_job;
 pub mod research;
 pub mod review;

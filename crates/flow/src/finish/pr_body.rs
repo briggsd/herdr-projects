@@ -8,7 +8,9 @@ use crate::err::Res;
 use crate::json::*;
 use crate::runner::Guard;
 use crate::store::settings::values::list_of;
+use crate::store::keys::{repo_keys, task_ref};
 use crate::store::tasks::Task;
+use std::path::Path;
 
 fn words(ch: &Obj, key: &str) -> Vec<String> { list_of(ch.at(key)).into_iter().filter(|w| w != "none" && !w.trim().is_empty()).collect() }
 
@@ -20,6 +22,18 @@ pub fn latest(id: &str, t: &Task, ch: &Obj, said: String) -> String {
     let plain = |s: &str| { let mut u = t.clone(); u.put("prBodyAsked", false); refused(&u, ch, s) };
     if plain(&said).is_some() && plain(&note).is_none() { runner_log(id, "pr body: from closing-note.md"); return note; }
     said
+}
+
+/// The pull request's body: the latest closing note with the issue's plain closing line, which the agent's note may
+/// have left out, and the task's own line. Err: why that note is not a body yet.
+pub fn compose(id: &str, t: &Task, ch: &Obj, root: &Path, text: &str) -> Result<String, String> {
+    let latest = latest(id, t, ch, if t.b("said") { t.t("said") } else { text.to_string() });
+    if let Some(why) = refused(t, ch, &latest) { return Err(why); }
+    let mut said = if latest.is_empty() { t.t("title") } else { latest };
+    if let Some(n) = super::closes::issue_of(t, root) {
+        if let Some(b) = super::closes::with_closes(&said, n) { said = b; runner_log(id, &format!("pr body: added Closes #{n}")); }
+    }
+    Ok(format!("{said}\n\nTask: {}", task_ref(id, &repo_keys())))
 }
 
 /// Why `note` is not a pull request body yet (`no Checked`, `says "no PR yet"`), or None to open it: also None once the

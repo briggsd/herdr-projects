@@ -42,7 +42,7 @@ pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep
             runner_log(id, &format!("pr_ready: {} line{} sent", bad.len(), if bad.len() == 1 { "" } else { "s" }));
             let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed:\n\n{}\n\nFix what these lines name. The board puts your closing note into the pull request's body, so write your closing note again as the whole body with them fixed (in closing-note.md, if you keep it there); fix and commit anything else they name. Then end your turn. The board checks it again and then asks for the review.", bad.join("\n"));
             let keep = keep_intent || g.check()?.b("mergeIntent");
-            crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadySent": sent + 1 })), 0)?;
+            crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadySent": sent + 1, "prReadySentAt": crate::clock::now() })), 0)?;
             Ok(true)
         }
         _ => {

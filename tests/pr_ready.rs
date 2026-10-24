@@ -11,12 +11,17 @@ const SCRIPT: &str = "#!/usr/bin/env bash\n[ -f claims.ok ] && exit 0\necho 'pr_
 fn passing() -> Value { json!({ "verdict": { "meets": true, "findings": [], "text": "Looks right." } }) }
 
 /// runner.log, what the worker was told, and gh's calls.
-fn finished(script: &str, steps: Value) -> (String, Vec<String>, String) {
-    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": "pi", "review.when": "always" }), ..Default::default() });
+fn finished(script: &str, steps: Value) -> (String, Vec<String>, String) { finished_by("pi", script, steps) }
+fn finished_by(agent: &str, script: &str, steps: Value) -> (String, Vec<String>, String) {
+    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": agent, "review.when": "always" }), ..Default::default() });
+    let id = w.add("Fix the thing");
     let mut steps = steps;
     steps[0]["files"]["tools/pr_ready.sh"] = json!(script);
+    // A note the turn writes itself, before it ends, as a real agent does (the stand-in writes `note` after the end).
+    for s in steps.as_array_mut().unwrap() {
+        if let Some(n) = s.get("inTurnNote").cloned() { s["files"][sw::store::files::dir_of(&id).join("closing-note.md").display().to_string()] = n; }
+    }
     w.script(json!({ "worker": steps, "reviewer": [passing()] }));
-    let id = w.add("Fix the thing");
     delegate(&id);
     let t = settle(&id);
     assert_eq!(t.s("stage"), "approval", "{} {}", t.s("msg"), t.at("failure"));
@@ -36,6 +41,18 @@ fn a_failing_body_goes_back_to_the_worker_before_any_review() {
     assert_eq!(told.len(), 2, "{told:?}");
     assert!(told[1].contains("pr_ready: the PR body has no \"Claims checked:\" line") && !told[1].contains("warn"), "{}", told[1]);
     assert!(gh.contains("pr edit 7 --body Fixed it.\n\nChecked: passes.\n\nClaims checked: none new."), "{gh}");
+}
+
+#[test]
+fn the_rewritten_body_is_the_closing_note_not_a_last_message_that_reads_like_one() {
+    // FL-420: the fix turn's last message said "**Checked:** …" about the body, and went into the body itself
+    let (log, _, gh) = finished_by("claude", SCRIPT, json!([
+        { "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." },
+        { "files": { "claims.ok": "\n" }, "commit": "claims", "inTurnNote": "Fixed it.\n\nChecked: passes.\n\nClaims checked: none new.", "ends": "claude-fixed-the-body", "hook": true },
+    ]));
+    assert!(gh.contains("pr edit 7 --body Fixed it.\n\nChecked: passes.\n\nClaims checked: none new.\n"), "{gh}");
+    assert!(!gh.contains("--body I rewrote"), "{gh}");
+    assert!(log.contains("pr_ready: ok"), "{log}");
 }
 
 #[test]

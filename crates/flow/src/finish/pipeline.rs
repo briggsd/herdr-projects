@@ -196,7 +196,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                 let mut own = if named { already::open_pr(t.s("branch"), tp) } else { None };
                 if own.is_none() {
                     // The latest closing note, not the words of turns held before it (finish/pr_body.rs).
-                    let body = super::pr_body::compose(id, &t, &ch, &root, text).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
+                    let body = super::pr_body::compose(id, &t, &ch, &root, text, false).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
                     let mut args = vec!["pr", "create", "--draft", "--head", t.s("branch"), "--title", if t.b("title") { t.s("title") } else { id }, "--body", &body];
                     if let Some(b) = &onto { args.extend(["--base", b.as_str()]); }
                     let r = flow::git::gh(&args, tp, 120000);
@@ -213,7 +213,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
                 g.set(|t| { t.put("pr", url.clone()); t.put("prSeen", ""); t.put("prState", "waiting"); })?;
             } else if t.b("prReadyPending") {
                 // pr_ready sent its lines back: the agent's new closing note is the body now, checked again.
-                let body = super::pr_body::compose(id, &t, &ch, &root, text).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
+                let body = super::pr_body::compose(id, &t, &ch, &root, text, true).map_err(|why| crate::err::Error::new(format!("prbody:{why}")))?;
                 let r = flow::git::gh(&["pr", "edit", &flow::git::pr_number(&url), "--body", &body], tp, 120000);
                 super::shared::runner_log(id, &if r.status == 0 { "pr body: synced from the closing note".to_string() } else { format!("pr body: not synced ({})", r.stderr.trim()) });
                 ready = true;

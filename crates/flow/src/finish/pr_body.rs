@@ -25,15 +25,28 @@ pub fn latest(id: &str, t: &Task, ch: &Obj, said: String) -> String {
 }
 
 /// The pull request's body: the latest closing note with the issue's plain closing line, which the agent's note may
-/// have left out, and the task's own line. Err: why that note is not a body yet.
-pub fn compose(id: &str, t: &Task, ch: &Obj, root: &Path, text: &str) -> Result<String, String> {
-    let latest = latest(id, t, ch, if t.b("said") { t.t("said") } else { text.to_string() });
+/// have left out, and the task's own line. Err: why that note is not a body yet. `rewritten`: the agent was asked to
+/// write the body again (finish/pr_ready.rs), so this turn's closing-note.md is it, even beside a last message that
+/// reads like one ("I rewrote the PR body … **Checked:** …", FL-420).
+pub fn compose(id: &str, t: &Task, ch: &Obj, root: &Path, text: &str, rewritten: bool) -> Result<String, String> {
+    let said = if t.b("said") { t.t("said") } else { text.to_string() };
+    let note = if rewritten { this_turns_note(t).unwrap_or_else(|| t.t("noteSaid")) } else { String::new() };
+    let latest = if rewritten && !note.trim().is_empty() { if note != said { runner_log(id, "pr body: from closing-note.md"); } note } else { latest(id, t, ch, said) };
     if let Some(why) = refused(t, ch, &latest) { return Err(why); }
     let mut said = if latest.is_empty() { t.t("title") } else { latest };
     if let Some(n) = super::closes::issue_of(t, root) {
         if let Some(b) = super::closes::with_closes(&said, n) { said = b; runner_log(id, &format!("pr body: added Closes #{n}")); }
     }
     Ok(format!("{said}\n\nTask: {}", task_ref(id, &repo_keys())))
+}
+
+/// closing-note.md as written since pr_ready's lines went to the agent. Read from the file: the note and the turn's
+/// end come as two events, and the one that ends the turn may not carry it.
+fn this_turns_note(t: &Task) -> Option<String> {
+    let f = crate::flow::task::note_file(t);
+    let at = std::fs::metadata(&f).and_then(|m| m.modified()).ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as f64;
+    if at <= t.f("prReadySentAt") { return None; }
+    std::fs::read_to_string(&f).ok().map(|s| s.trim_end().to_string()).filter(|s| !s.trim().is_empty())
 }
 
 /// Why `note` is not a pull request body yet (`no Checked`, `says "no PR yet"`), or None to open it: also None once the

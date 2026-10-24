@@ -9,10 +9,12 @@ use sw::store::tasks::{update, Change};
 fn failing() -> Value { json!({ "verdict": { "meets": false, "gate": "major", "pass": false, "text": "No test.", "findings": [{ "id": "F1", "severity": "major", "subject": "No test", "where": "f.txt", "proof": "read it" }] } }) }
 fn passing() -> Value { json!({ "verdict": { "meets": true, "findings": [], "text": "Looks right." } }) }
 /// A task sent back once and passed after its fix: the worker's prompts in order, and runner.log.
-fn run(on: bool, compact_fails: bool) -> (Vec<String>, String) {
+fn run(on: bool, compact_fails: bool) -> (Vec<String>, String) { run_reviews(on, compact_fails, json!([failing(), passing()])) }
+fn run_reviews(on: bool, compact_fails: bool, reviews: Value) -> (Vec<String>, String) {
     let w = world_with(Opts { repo: true, settings: json!({ "worker.agent": "claude", "reviewer.agent": "claude", "worker.compactBeforeFix": on, "review.when": "always" }), ..Default::default() });
     if compact_fails { w.patch(|s| s["compactFails"] = json!(true)); }
-    w.script(json!({ "worker": [step(1), step(2)], "reviewer": [failing(), passing()] }));
+    let n = reviews.as_array().map(|a| a.len()).unwrap_or(2) as i64;
+    w.script(json!({ "worker": (1..=n).map(step).collect::<Vec<_>>(), "reviewer": reviews }));
     let id = w.add("Fix the thing");
     update(&id, |c| { c.put("description", "Fix the thing"); Ok(Change::Write) }).unwrap();
     delegate(&id);
@@ -45,4 +47,12 @@ fn a_compact_that_fails_still_sends_the_findings_and_says_so() {
     let (prompts, log) = run(true, true);
     assert!(at(&prompts, "No test").is_some(), "{prompts:#?}");
     assert!(log.contains("fix round 1: compact failed (agent_prompt_stalled"), "{log}");
+}
+
+#[test]
+fn each_fix_round_is_named_after_the_review_that_sent_it_back() {
+    // FL-409 logged "fix round 1" twice: a reply between them reset the round count, not the review's number
+    let (_, log) = run_reviews(true, false, json!([failing(), failing(), passing()]));
+    let (one, two) = (log.find("fix round 1: compacted").expect(&log), log.find("fix round 2: compacted").expect(&log));
+    assert!(one < two && log.matches("fix round 1:").count() == 1, "{log}");
 }

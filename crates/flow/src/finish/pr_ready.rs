@@ -2,8 +2,8 @@
 //! the task's worktree. It checks the body (its Closes, Checked and Claims checked lines), and only can once the pull
 //! request exists, which the board opens itself after the agent's turn: run by the agent before that, its body checks
 //! wait, so a missing line was first found by the reviewer, a whole review round for one line (fl-friction,
-//! 2026-10-23: FLM-111, FLM-114). Its failing lines go back to the agent, at most `SENDS` times; the next closing note
-//! is put into the body (finish/pipeline.rs) and the script runs again. A script that cannot run holds nothing.
+//! 2026-10-23: FLM-111, FLM-114). Its failing lines go back to the agent, at most `SENDS` times a round; the next
+//! closing note is put into the body (finish/pipeline.rs) and the script runs again, before every review round. A script that cannot run holds nothing.
 use super::shared::runner_log;
 use crate::err::Res;
 use crate::json::*;
@@ -21,7 +21,8 @@ pub fn failing(out: &str) -> Vec<String> {
 /// Whether the failing lines went back to the agent: the review waits for its next turn.
 pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep_intent: bool) -> Res<bool> {
     let pending = g.check()?.b("prReadyPending");
-    let clear = |g: &mut Guard| -> Res<()> { if pending { g.set(|t| t.put("prReadyPending", false))?; } Ok(()) };
+    // Done with this round: the next round's failures get their own sends.
+    let clear = |g: &mut Guard| -> Res<()> { if pending || g.check()?.i("prReadySent") > 0 { g.set(|t| { t.put("prReadyPending", false); t.put("prReadySent", 0); })?; } Ok(()) };
     if !ch.b("pr.readyBeforeReview") || !tree.join(SCRIPT).is_file() { clear(g)?; return Ok(false); }
     let pr = crate::flow::git::pr_number(url);
     crate::runner::user_env();

@@ -12,8 +12,9 @@ fn passing() -> Value { json!({ "verdict": { "meets": true, "findings": [], "tex
 
 /// runner.log, what the worker was told, and gh's calls.
 fn finished(script: &str, steps: Value) -> (String, Vec<String>, String) { finished_by("pi", script, steps) }
-fn finished_by(agent: &str, script: &str, steps: Value) -> (String, Vec<String>, String) {
-    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": agent, "review.when": "always" }), ..Default::default() });
+fn finished_by(agent: &str, script: &str, steps: Value) -> (String, Vec<String>, String) { reviewed_by(agent, script, steps, json!([passing()])) }
+fn reviewed_by(agent: &str, script: &str, steps: Value, reviews: Value) -> (String, Vec<String>, String) {
+    let w = world_with(Opts { repo: true, origin: true, settings: json!({ "worker.agent": agent, "review.when": "always", "pr.bodyNeeds": ["Checked:"] }), ..Default::default() });
     let id = w.add("Fix the thing");
     let mut steps = steps;
     steps[0]["files"]["tools/pr_ready.sh"] = json!(script);
@@ -21,7 +22,7 @@ fn finished_by(agent: &str, script: &str, steps: Value) -> (String, Vec<String>,
     for s in steps.as_array_mut().unwrap() {
         if let Some(n) = s.get("inTurnNote").cloned() { s["files"][sw::store::files::dir_of(&id).join("closing-note.md").display().to_string()] = n; }
     }
-    w.script(json!({ "worker": steps, "reviewer": [passing()] }));
+    w.script(json!({ "worker": steps, "reviewer": reviews }));
     delegate(&id);
     let t = settle(&id);
     assert_eq!(t.s("stage"), "approval", "{} {}", t.s("msg"), t.at("failure"));
@@ -69,4 +70,41 @@ fn a_script_that_cannot_run_is_said_and_the_review_goes_on() {
     let (log, told, _) = finished("#!/usr/bin/env bash\necho 'pr_ready: unknown option --x'\nexit 2\n", json!([{ "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." }]));
     assert!(log.contains("pr_ready: could not run (exit 2: pr_ready: unknown option --x), so the review goes on") && log.contains("review 1"), "{log}");
     assert_eq!(told.len(), 1, "{told:?}");
+}
+
+#[test]
+fn a_fix_rounds_closing_note_is_the_body_before_the_next_review() {
+    // FL-424, FL-431: the fixed closing-note.md never reached the pull request, so review 2 failed on the old body
+    let failing = json!({ "verdict": { "meets": false, "gate": "major", "pass": false, "text": "No.", "findings": [{ "id": "F1", "severity": "major", "subject": "The body has no Shots line", "where": "PR body" }] } });
+    let (log, _, gh) = reviewed_by("claude", SCRIPT, json!([
+        { "files": { "f.txt": "v1\n", "claims.ok": "\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." },
+        { "inTurnNote": "Fixed it.\n\nChecked: passes.\n\nShots: none, no screen.", "ends": "claude-finished-made", "hook": true },
+    ]), json!([failing, passing()]));
+    let synced = log.find("pr body: synced from the closing note").unwrap_or_else(|| panic!("{log}"));
+    let second = log.find("review 2").unwrap_or_else(|| panic!("{log}"));
+    assert!(log.find("review 1").unwrap() < synced && synced < second, "{log}");
+    assert_eq!(log.matches("pr_ready: ok").count(), 2, "before each review: {log}");
+    assert!(gh.contains("pr edit 7 --body Fixed it.\n\nChecked: passes.\n\nShots: none, no screen.\n"), "{gh}");
+}
+
+#[test]
+fn a_round_with_no_new_note_leaves_the_body_alone() {
+    let failing = json!({ "verdict": { "meets": false, "gate": "major", "pass": false, "text": "No.", "findings": [{ "id": "F1", "severity": "major", "subject": "A typo", "where": "f.txt" }] } });
+    let (log, _, gh) = reviewed_by("pi", SCRIPT, json!([
+        { "files": { "f.txt": "v1\n", "claims.ok": "\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." },
+        { "files": { "f.txt": "v2\n" }, "commit": "typo" },
+    ]), json!([failing, passing()]));
+    assert!(log.contains("review 2") && !log.contains("pr body: synced"), "{log}");
+    assert!(!gh.contains("pr edit 7 --body"), "{gh}");
+}
+
+#[test]
+fn a_fix_rounds_note_that_is_no_body_leaves_the_body_alone() {
+    let failing = json!({ "verdict": { "meets": false, "gate": "major", "pass": false, "text": "No.", "findings": [{ "id": "F1", "severity": "major", "subject": "A typo", "where": "f.txt" }] } });
+    let (log, _, gh) = reviewed_by("claude", SCRIPT, json!([
+        { "files": { "f.txt": "v1\n", "claims.ok": "\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." },
+        { "files": { "f.txt": "v2\n" }, "commit": "typo", "inTurnNote": "Round 2: fixed the typo.", "ends": "claude-finished-made", "hook": true },
+    ]), json!([failing, passing()]));
+    assert!(log.contains("review 2") && !log.contains("pr body: synced") && !log.contains("body refused"), "{log}");
+    assert!(!gh.contains("pr edit 7 --body"), "{gh}");
 }

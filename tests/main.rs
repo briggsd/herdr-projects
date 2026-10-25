@@ -6,6 +6,7 @@ mod far;
 mod issue_labels;
 mod move_home;
 mod pace;
+mod approval_nudge;
 mod review_kit;
 mod takeover_kit;
 

@@ -6,6 +6,7 @@ pub use sw_core::*;
 
 pub mod actions;
 pub mod after;
+pub mod approval_nudge;
 pub mod attempts;
 pub mod automations;
 pub mod coordinator;

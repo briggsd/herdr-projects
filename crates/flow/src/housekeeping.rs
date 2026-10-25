@@ -49,6 +49,8 @@ pub fn housekeeping(socket: &str, force: Force) {
             if due(&format!("tidy-{}", key(t.s("id"))), 30000) { spawn_runner("cleanup", t.s("id"), if t.at("tidy").s("deleteBranch") == "merged" { &["--merged"] } else { &[] }); }
         }
         crate::notify::notify_pass(&list(ListOpts::default()));
+        // A task left waiting for approval: the Coordinator is told again (approval_nudge.rs).
+        crate::approval_nudge::nudge_pass(&tasks, socket);
         resync(&tasks, socket);
         // A chat that changed the code, and you are done with it: its one review (finish/chat.rs).
         crate::finish::chat::chat_pass(&tasks, socket);

@@ -82,6 +82,19 @@ pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep
         _ => {
             let why = if end.timed_out { format!("no end in {} s", RUN_MS / 1000) } else if !end.error.is_empty() { end.error.clone() } else { format!("exit {}: {}", end.code.unwrap_or(-1), last) };
             runner_log(id, &format!("pr_ready: could not run ({why}), so the review goes on"));
+            // The Coordinator hears of it, once a task: a script that cannot run on this machine checks nothing, and
+            // until then only runner.log said so (fl-friction, 2026-10-25: FLM's macOS bash 3.2, FLM-135).
+            let t = g.check()?;
+            if !t.b("prReadyToldCoordinator") {
+                let first = [end.stderr.as_str(), end.stdout.as_str()].iter().flat_map(|s| s.lines()).map(str::trim).filter(|l| !l.is_empty()).find(|l| l.to_lowercase().contains("error")).map(String::from).unwrap_or_else(|| why.clone());
+                let tag = { let k = crate::store::keys::tag_of(id, &crate::store::keys::repo_keys()); if k.is_empty() { id.to_string() } else { k } };
+                let root = t.s("root");
+                let text = format!("[board] pr_ready could not run on {tag}: {first}");
+                if crate::coordinator::requests::send(Path::new(if root.is_empty() { "." } else { root }), &text, false, "", t.at("link").s("socket")).is_ok() {
+                    g.set(|t| { t.put("prReadyToldCoordinator", true); })?;
+                    runner_log(id, "pr_ready: could not run, coordinator told");
+                }
+            }
             clear(g)?;
             Ok(false)
         }

@@ -74,6 +74,8 @@ fn a_script_that_cannot_run_is_said_and_the_review_goes_on() {
     let (log, told, _) = finished("#!/usr/bin/env bash\necho 'pr_ready: unknown option --x'\nexit 2\n", json!([{ "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." }]));
     assert!(log.contains("pr_ready: could not run (exit 2: pr_ready: unknown option --x), so the review goes on") && log.contains("review 1"), "{log}");
     assert_eq!(told.len(), 1, "{told:?}");
+    // the Coordinator hears of it, once
+    assert_eq!(log.matches("pr_ready: could not run, coordinator told").count(), 1, "{log}");
 }
 
 #[test]

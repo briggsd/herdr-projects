@@ -33,6 +33,7 @@ pub const HELP: &str = r#"herdr-projects: a work board for herdr
   herdr-projects finish <id>                   finish anyway, when the agent stopped without a summary or at a limit,
                                                 or when the board missed it finishing (its agent at rest, the row still "Finishing")
   herdr-projects details <id>                  failure details, review, next steps, and what it used against its limits
+  herdr-projects front <id>                    move a task waiting for a free slot to Q#1 (no slot is added)
   herdr-projects pin|archive|restore|clear <id>
   herdr-projects set <name> <value> [--repo NAME | --task ID | --automation NAME]
                                       change a setting: for you, for your entry for one repo, for one task, or for an automation

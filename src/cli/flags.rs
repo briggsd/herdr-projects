@@ -55,7 +55,7 @@ fn takes(cmd: &str, sub: &str) -> Option<Takes> {
         "add" | "new" => s(ADD),
         "list" | "ls" => f(LIST),
         "report" => f(&["state", "kind", "msg", "title", "progress", "eta", "desc", "repo"]),
-        "describe" | "rename" | "tell" | "stop" | "start" | "pick" | "review" | "retry" | "fix" | "finish" | "details" | "pin" | "archive" | "restore" | "unarchive" | "clear" => f(&[]),
+        "describe" | "rename" | "tell" | "stop" | "start" | "pick" | "review" | "retry" | "fix" | "finish" | "details" | "front" | "pin" | "archive" | "restore" | "unarchive" | "clear" => f(&[]),
         "delegate" => s(&["research", "after", "now"]),
         "after" => f(&["clear"]),
         "approve" => f(&["anyway"]),

@@ -125,6 +125,21 @@ pub fn delegate_with(id: &str, asked: Vec<(String, Value)>, w: Wait) -> Res<Task
     start_queued(&socket);
     Ok(get(t.s("id")).unwrap_or(t))
 }
+/// `front <id>`: a task waiting for a free slot takes Q#1, its queuedAt set just before the first one's, under the
+/// slots lock; the others keep their order, and no slot is added (fl-coord, 2026-10-25: a p1 at Q#7). Its place before.
+pub fn front(id: &str) -> Res<(Task, usize)> {
+    let cur = find(id)?;
+    let socket = cur.at("link").t("socket");
+    with_lock_wait("slots", 5000, || {
+        let all = list(ListOpts { attempts: true, ..Default::default() });
+        let waiting = crate::shown::queue::order(all.iter(), &socket);
+        let Some(at) = waiting.iter().position(|t| t.s("id") == cur.s("id")) else { crate::fail!("{} is not waiting for a free slot.", cur.s("id")) };
+        if at == 0 { return Ok((cur.clone(), 1)); }
+        let first = waiting[0].i("queuedAt");
+        let t = update(cur.s("id"), |t| { if t.s("stage") != "queued" { crate::fail!("{} is not waiting for a free slot.", t.s("id")); } t.put("queuedAt", first - 1); Ok(Change::Write) })?;
+        Ok((t, at + 1))
+    })
+}
 /// Start queued tasks while slots are free. Counting and claiming happen under one lock, so two passes cannot both
 /// take the last slot. A turn the human started in an agent's terminal counts toward the total.
 pub fn start_queued(socket: &str) -> Vec<String> {

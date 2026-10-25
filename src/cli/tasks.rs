@@ -108,6 +108,7 @@ pub fn command(cmd: &str, a: &Args) -> Res<(Value, String)> {
         "fix" => said(finish_line::send_failure(&need(1, "an id")?)?),
         "finish" => said(finish_line::finish_anyway(&need(1, "an id")?)?),
         "details" => { let d = tidy(finish_line::details(&need(1, "an id")?)?); let s = serde_json::to_string_pretty(&d).unwrap_or_default(); (d, s) }
+        "front" => { let (t, was) = crate::actions::start::front(&need(1, "an id")?)?; (shown_of(t.s("id")), format!("{}: first for a free slot (Q#1){}", t.s("id"), if was > 1 { format!(", was Q#{was}") } else { String::new() })) }
         "pin" => { let t = filing::pin(&need(1, "an id")?)?; (shown_of(t.s("id")), format!("{}: {}", t.s("id"), if t.b("pinned") { "pinned" } else { "unpinned" })) }
         "archive" => { let t = archive::archive(&need(1, "an id")?)?; (shown_of(t.s("id")), format!("{}: archived", t.s("id"))) }
         "restore" | "unarchive" => { let t = archive::restore(&need(1, "an id")?)?; (shown_of(t.s("id")), format!("{}: restored", t.s("id"))) }

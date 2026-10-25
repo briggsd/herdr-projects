@@ -77,3 +77,20 @@ fn the_queue_colour_is_a_pink_of_its_own_in_every_theme() {
     // As docs/colours.md has them: herdr's default and the terminal's own colours.
     assert_eq!((resolve(&toml::Table::new(), None, "herdr", Seen::default()).pal.queue, t.queue), (sw::board::theme::C::Rgb(0xec4899), sw::board::theme::C::Rgb(0xec4899)));
 }
+
+#[test]
+fn front_moves_a_waiting_task_to_q1_and_the_others_keep_their_order() {
+    let w = world_with(Opts { repo: true, settings: json!({ "board.agents": 1, "review.when": "never" }), ..Default::default() });
+    w.script(json!({ "worker": [{ "files": { "1.txt": "1\n" }, "commit": "1", "note": "One." }, { "status": "working" }] }));
+    let (a, b, c, d) = (w.add("At work"), w.add("Second"), w.add("Third"), w.add("Fourth"));
+    for id in [&a, &b, &c, &d] { delegate(id); sw::clock::advance(1000); }
+    assert_eq!((row(&b).i("queuePlace"), row(&c).i("queuePlace"), row(&d).i("queuePlace")), (1, 2, 3));
+    let (_, was) = sw::actions::start::front(&d).unwrap();
+    assert_eq!(was, 3);
+    assert_eq!((row(&d).i("queuePlace"), row(&b).i("queuePlace"), row(&c).i("queuePlace")), (1, 2, 3));
+    // Already first: nothing changes. Not waiting for a slot: refused, and no slot is added.
+    assert_eq!(sw::actions::start::front(&d).unwrap().1, 1);
+    let e = sw::actions::start::front(&a).unwrap_err();
+    assert!(e.msg.contains("is not waiting for a free slot"), "{}", e.msg);
+    assert_eq!((task(&b).t("stage"), task(&c).t("stage"), task(&d).t("stage")), ("queued".into(), "queued".into(), "queued".into()));
+}

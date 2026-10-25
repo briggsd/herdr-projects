@@ -94,7 +94,16 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
         // or one that changes more than they needed, is reviewed, on its own.
         if let Some((review, head, _)) = passed_review(&t) {
             let s = sync::since_review(&tree, &head, &sync_r.map(|r| r.target.clone()).unwrap_or_default());
-            if sync::nothing_to_look_at(&s) { kept = Some(review); kept_how = Some(json!({ "from": head, "merges": s.arr("merges").len(), "resolved": [], "same": s.arr("merges").is_empty() })); }
+            let n = t.i("reviewRound");
+            if sync::nothing_to_look_at(&s) {
+                super::shared::runner_log(id, &if s.arr("merges").is_empty() { format!("review: skipped, no commits since review {n}") } else { format!("review: skipped, only clean merges of main since review {n}") });
+                kept = Some(review); kept_how = Some(json!({ "from": head, "merges": s.arr("merges").len(), "resolved": [], "same": s.arr("merges").is_empty() }));
+            } else if s.b("ok") && s.arr("own").is_empty() && s.arr("other").is_empty() {
+                // Only merges of main, some resolved by hand: the next review looks at those only (review_brief.rs).
+                let mut files: Vec<String> = s.arr("merges").iter().filter(|m| m.b("look")).flat_map(|m| m.arr("conflicts").iter().chain(m.arr("extra").iter()).map(|f| f.as_str().unwrap_or("").to_string())).collect();
+                files.sort(); files.dedup();
+                super::shared::runner_log(id, &format!("review {}: merge-only ({} file{})", t.i("reviewRound") + 1, files.len(), if files.len() == 1 { "" } else { "s" }));
+            }
         }
     }
     if let (None, Some(r)) = (&kept, sync_r) { if r.status == "merged" && r.overlap.as_ref().map(|o| o.is_empty()).unwrap_or(false) && t.s("reviewedHead") == r.before { kept = current_review(&t).cloned(); if kept.is_some() { kept_how = Some(json!({ "from": r.before, "merges": 1, "resolved": [] })); } } }

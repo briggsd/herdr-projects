@@ -12,6 +12,7 @@ fn holds(dir: &str, sha: &str) -> bool { common::worktrees::git(Path::new(dir), 
 fn big(first: &str, last: &str) -> String { let mut v = vec![first.to_string()]; v.extend((2..20).map(|i| format!("line {i}"))); v.push(last.into()); v.join("\n") + "\n" }
 fn main_moves(w: &World, files: &[(&str, &str)]) -> String { for (f, t) in files { std::fs::write(w.root.join(f), t).unwrap(); } git(&w.root, &["add", "-A"]); git(&w.root, &["commit", "-qm", "main moves"]); git(&w.root, &["rev-parse", "HEAD"]) }
 fn resync(w: &World, id: &str) -> Obj { sw::housekeeping::housekeeping(&w.socket, sw::housekeeping::Force::Yes); let mut t = settle(id); for _ in 0..2 { t = settle(id); } t }
+fn log_of(id: &str) -> String { std::fs::read_to_string(sw::store::files::dir_of(id).join("runner.log")).unwrap_or_default() }
 fn head(t: &Obj) -> String { git(Path::new(t.s("worktree")), &["rev-parse", "HEAD"]) }
 /// A world whose main has big.txt and a check, and one task that edited big.txt's first line and passed review 1.
 fn passed() -> (World, String, String) {
@@ -42,6 +43,7 @@ fn main_merged_cleanly_apart_from_the_tasks_files_after_a_passing_review_the_tes
     assert_eq!(e.t("head"), reviewed); assert_eq!(e.arr("kept").len(), 1); assert_eq!(e.at("kept")[0].t("head"), t.t("reviewedHead")); assert!(e.at("kept")[0].i("at") > 0);
     assert_eq!(sw::actions::finish_line::details(&id).unwrap().at("reviews")[0].arr("kept").len(), 1);
     assert_eq!(prompts(&w, t.at("link").s("pane")).len(), 1, "the agent heard nothing");
+    assert_eq!(log_of(&id).matches("review: skipped, only clean merges of main since review 1").count(), 1, "{}", log_of(&id));
     // main moves again: still measured from the commit the reviewer really saw, and written down again
     main_moves(&w, &[("other.txt", "MAIN AGAIN\n")]);
     let u = resync(&w, &id);
@@ -95,6 +97,7 @@ fn a_conflict_the_agent_resolved_in_the_merge_is_reviewed_again() {
     assert_eq!(t.i("reviewRound"), 2); assert_eq!(review_history(&t).len(), 2); assert!(!t.at("review").b("keptAt"));
     let s = sw::sync::since_review(t.s("worktree"), &reviewed, &main);
     assert!(s.arr("own").is_empty()); assert_eq!(s.arr("merges")[0].at("conflicts"), &json!(["big.txt"]));
+    assert!(log_of(&id).contains("review 2: merge-only (1 file)"), "{}", log_of(&id)); assert!(!log_of(&id).contains("review: skipped"));
 }
 
 #[test]
@@ -122,6 +125,9 @@ fn more_than_the_merge_needed_is_reviewed_again_a_file_that_did_not_conflict_or_
         }
         assert_eq!(t.s("stage"), "approval", "case {case}: {}", t.at("failure"));
         assert_eq!(t.i("reviewRound"), 2, "case {case}"); assert!(!t.at("review").b("keptAt")); assert_eq!(review_history(&t).len(), 2); assert!(!review_history(&t)[0].b("kept"));
+        // a file added in the merge itself is in its remerge-diff: that merge alone is reviewed; a commit on top means all of it
+        if case == 0 { assert!(log_of(&id).contains("review 2: merge-only (2 files)"), "{}", log_of(&id)); }
+        else { assert!(!log_of(&id).contains("merge-only") && !log_of(&id).contains("review: skipped"), "a full review: {}", log_of(&id)); }
     }
 }
 

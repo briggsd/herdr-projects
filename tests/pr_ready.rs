@@ -40,7 +40,10 @@ fn a_failing_body_goes_back_to_the_worker_before_any_review() {
     assert!(log.find("review 1").map(|r| sent < r && ok < r).unwrap_or(false), "no review before it passed: {log}");
     assert!(log.contains("pr body: synced from the closing note"), "{log}");
     assert_eq!(told.len(), 2, "{told:?}");
-    assert!(told[1].contains("pr_ready: the PR body has no \"Claims checked:\" line") && !told[1].contains("warn"), "{}", told[1]);
+    assert!(told[1].contains("pr_ready: the PR body has no \"Claims checked:\" line"), "{}", told[1]);
+    // the warn goes with the failure, as advisory
+    assert!(log.contains("pr_ready: 1 warn line sent"), "{log}");
+    assert!(told[1].contains("Advisory (not blocking): fix or say in the body why not.\npr_ready warn: a.rs:3: names an address"), "{}", told[1]);
     assert!(told[1].contains("with a new commit. Re-read each added sentence. Then end your turn"), "{}", told[1]);
     assert!(told[1].contains("/closing-note.md as the whole pull request body") && told[1].contains("don't run gh pr edit and don't summarise it in your reply"), "{}", told[1]);
     assert!(gh.contains("pr edit 7 --body Fixed it.\n\nChecked: passes.\n\nClaims checked: none new."), "{gh}");
@@ -110,4 +113,20 @@ fn a_fix_rounds_note_that_is_no_body_leaves_the_body_alone() {
     assert!(log.contains("review 2") && !log.contains("pr body: synced") && !log.contains("body refused"), "{log}");
     assert_eq!(log.matches("pr body: note is not a whole body, left alone").count(), 1, "{log}");
     assert!(!gh.contains("pr edit 7 --body"), "{gh}");
+}
+
+#[test]
+fn warns_alone_are_sent_once_and_then_the_review_goes_on() {
+    // FL-464: a warn the board dropped was what review 1 failed on
+    let warn = "#!/usr/bin/env bash\necho 'pr_ready warn: a.rs:3: names an address with no [observed] in its block'\nexit 0\n";
+    let (log, told, _) = finished(warn, json!([
+        { "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.\n\nChecked: passes." },
+        { "files": { "f.txt": "v2\n" }, "commit": "v2", "note": "Fixed it.\n\nChecked: passes, a.rs:3 left: a quote." },
+    ]));
+    let sent = log.find("pr_ready: 1 warn line sent").unwrap_or_else(|| panic!("{log}"));
+    let ok = log.find("pr_ready: ok").unwrap_or_else(|| panic!("{log}"));
+    assert!(log.find("review 1").map(|r| sent < ok && ok < r).unwrap_or(false), "{log}");
+    assert_eq!(log.matches("warn line").count(), 1, "{log}");
+    assert_eq!(told.len(), 2, "{told:?}");
+    assert!(told[1].contains("It passed, with warnings:\n\nAdvisory (not blocking): fix or say in the body why not.\npr_ready warn: a.rs:3") && told[1].contains("the review follows"), "{}", told[1]);
 }

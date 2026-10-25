@@ -4,6 +4,8 @@
 //! wait, so a missing line was first found by the reviewer, a whole review round for one line (fl-friction,
 //! 2026-10-23: FLM-111, FLM-114). Its failing lines go back to the agent, at most `SENDS` times a round; the next
 //! closing note is put into the body (finish/pipeline.rs) and the script runs again, before every review round. A script that cannot run holds nothing.
+//! Its `pr_ready warn:` lines (an address with no tag in its block: what reviewers then fail on, fl-friction 2026-10-25,
+//! FL-464) go with them as advisory, each once a round; warns alone are sent once a round and never hold the review.
 use super::shared::runner_log;
 use crate::err::Res;
 use crate::json::*;
@@ -18,6 +20,13 @@ const RUN_MS: u64 = 180000;
 pub fn failing(out: &str) -> Vec<String> {
     out.lines().map(str::trim_end).filter(|l| l.starts_with("pr_ready: ")).map(String::from).collect()
 }
+/// The advisory lines: `pr_ready warn: …`.
+pub fn warns(out: &str) -> Vec<String> {
+    out.lines().map(str::trim_end).filter(|l| l.starts_with("pr_ready warn: ")).map(String::from).collect()
+}
+fn advisory(w: &[String]) -> String {
+    if w.is_empty() { String::new() } else { format!("\n\nAdvisory (not blocking): fix or say in the body why not.\n{}", w.join("\n")) }
+}
 /// The repo's own line said with them (`pr.readyAlso`), with its leading space.
 fn also(ch: &Obj) -> String {
     let a = ch.t("pr.readyAlso");
@@ -27,7 +36,11 @@ fn also(ch: &Obj) -> String {
 pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep_intent: bool) -> Res<bool> {
     let pending = g.check()?.b("prReadyPending");
     // Done with this round: the next round's failures get their own sends.
-    let clear = |g: &mut Guard| -> Res<()> { if pending || g.check()?.i("prReadySent") > 0 { g.set(|t| { t.put("prReadyPending", false); t.put("prReadySent", 0); })?; } Ok(()) };
+    let clear = |g: &mut Guard| -> Res<()> {
+        let t = g.check()?;
+        if pending || t.i("prReadySent") > 0 || t.b("prReadyWarned") || t.b("prReadyWarnOnly") { g.set(|t| { t.put("prReadyPending", false); t.put("prReadySent", 0); t.put("prReadyWarned", json!([])); t.put("prReadyWarnOnly", false); })?; }
+        Ok(())
+    };
     if !ch.b("pr.readyBeforeReview") || !tree.join(SCRIPT).is_file() { clear(g)?; return Ok(false); }
     let pr = crate::flow::git::pr_number(url);
     crate::runner::user_env();
@@ -35,8 +48,22 @@ pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep
     c.args([SCRIPT, &pr]).current_dir(tree).env("GH_PROMPT_DISABLED", "1").env("GIT_TERMINAL_PROMPT", "0");
     let end = crate::remote::run_ended(c, RUN_MS);
     let bad = failing(&end.stdout);
+    // Warn lines not sent yet this round.
+    let told: Vec<String> = g.check()?.arr("prReadyWarned").iter().filter_map(|v| v.as_str().map(String::from)).collect();
+    let new: Vec<String> = warns(&end.stdout).into_iter().filter(|w| !told.contains(w)).collect();
+    let note = crate::flow::task::note_file(&g.check()?);
+    let fix = format!("rewriting {} as the whole pull request body. The board copies that file into the pull request, so don't run gh pr edit and don't summarise it in your reply. Fix any commit lines with a new commit.{}", note.display(), also(ch));
+    let said_warns = |id: &str| if !new.is_empty() { runner_log(id, &format!("pr_ready: {} warn line{} sent", new.len(), if new.len() == 1 { "" } else { "s" })); };
+    let warned = { let mut w = told.clone(); w.extend(new.iter().cloned()); w };
     let last = [end.stderr.as_str(), end.stdout.as_str()].iter().flat_map(|s| s.lines()).filter(|l| !l.trim().is_empty()).last().unwrap_or("").trim().to_string();
     match end.code {
+        Some(0) if !new.is_empty() && !g.check()?.b("prReadyWarnOnly") => {
+            said_warns(id);
+            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request. It passed, with warnings:{}\n\nFix a body line by {fix} Then end your turn; the review follows.", advisory(&new));
+            let keep = keep_intent || g.check()?.b("mergeIntent");
+            crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadyWarnOnly": true, "prReadyWarned": warned, "prReadySentAt": crate::clock::now() })), 0)?;
+            Ok(true)
+        }
         Some(0) => { runner_log(id, "pr_ready: ok"); clear(g)?; Ok(false) }
         Some(1) if !bad.is_empty() => {
             let sent = g.check()?.i("prReadySent");
@@ -46,10 +73,10 @@ pub fn sent_back(id: &str, g: &mut Guard, ch: &Obj, tree: &Path, url: &str, keep
                 return Ok(false);
             }
             runner_log(id, &format!("pr_ready: {} line{} sent", bad.len(), if bad.len() == 1 { "" } else { "s" }));
-            let note = crate::flow::task::note_file(&g.check()?);
-            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed on the body or the commits:\n\n{}\n\nFix the body lines by rewriting {} as the whole pull request body. The board copies that file into the pull request, so don't run gh pr edit and don't summarise it in your reply. Fix any commit lines with a new commit.{} Then end your turn; the board checks it again before the review.", bad.join("\n"), note.display(), also(ch));
+            said_warns(id);
+            let words = format!("Before the review, the board ran `bash {SCRIPT} {pr}` on your pull request, and it failed on the body or the commits:\n\n{}{}\n\nFix the body lines by {fix} Then end your turn; the board checks it again before the review.", bad.join("\n"), advisory(&new));
             let keep = keep_intent || g.check()?.b("mergeIntent");
-            crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadySent": sent + 1, "prReadySentAt": crate::clock::now() })), 0)?;
+            crate::flow::send::send_own(id, &words, "prready", keep, obj(json!({ "prReadyPending": true, "prReadySent": sent + 1, "prReadyWarned": warned, "prReadySentAt": crate::clock::now() })), 0)?;
             Ok(true)
         }
         _ => {

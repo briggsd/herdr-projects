@@ -119,3 +119,24 @@ fn pull_request_comments_only_the_humans_own_wake_the_agent_not_others_nor_the_b
     assert!(log.lines().any(|l| l == "api user --jq .login"), "{log}");
     assert_eq!(log.lines().filter(|l| l.starts_with("api user")).count(), 1, "asked once, then remembered");
 }
+#[test]
+fn pull_request_comments_the_agent_wrote_before_its_finish_are_not_new_feedback() {
+    let w = pr_world(json!({}));
+    let id = to_approval(&w, "Round notes");
+    let t = task(&id);
+    let done = t.i("agentDoneAt");
+    assert!(done > 0, "the finish is remembered");
+    let before = pane_prompts(&w, &id).len();
+    let gh = |comments: serde_json::Value| w.gh_says(json!({ "user": "elias", "view": { "state": "OPEN", "headRefOid": t.at("prHead"), "statusCheckRollup": [], "reviews": [], "author": { "login": "elias" }, "comments": comments } }));
+    let say = |body: &str, n: i64, at: i64| json!({ "id": format!("c{n}"), "author": { "login": "elias" }, "body": body, "createdAt": sw::clock::iso(at), "updatedAt": sw::clock::iso(at) });
+    // the agent's round notes, posted as the same user while it worked
+    gh(json!([say("Round 2 (commit abc), fixing the review's findings.", 1, done - 300000)]));
+    poll_prs();
+    assert_eq!(pane_prompts(&w, &id).len(), before); assert_eq!(task(&id).s("stage"), "approval"); assert!(!task(&id).b("failure"));
+    // the human's words after the finish do wake it
+    w.script(json!({ "worker": [{ "status": "working" }] }));
+    gh(json!([say("Round 2 (commit abc), fixing the review's findings.", 1, done - 300000), say("Please rename the flag.", 2, done + 300000)]));
+    poll_prs();
+    let p = pane_prompts(&w, &id);
+    assert_eq!(p.len(), before + 1); assert!(p.last().unwrap().contains("New feedback on the pull request"), "{}", p.last().unwrap());
+}

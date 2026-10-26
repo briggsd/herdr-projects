@@ -45,7 +45,7 @@ pub fn pipeline_job(id: &str) {
 pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: &str, synced: Option<&sync::Synced>) -> Res<()> {
     // A task that starts with a plan, and the build has not started: this turn was the plan's (plan/written.rs).
     if crate::plan::pending(&g.check()?) { return crate::plan::written::plan_written(id, g, text); }
-    let mut t = g.set(|t| { t.del("chat"); t.del("chatKept"); t.put("stage", "checking"); t.put("syncBlocked", Value::Null); t.put("msg", if synced.is_some() { "Checking the branch updated with main" } else { "Checking the result" }); t.put("watch", Value::Null); t.put("check", Value::Null); t.put("summary", text.trim()); })?;
+    let mut t = g.set(|t| { t.del("chat"); t.del("chatKept"); t.put("stage", "checking"); t.put("syncBlocked", Value::Null); t.put("msg", if synced.is_some() { "Checking the branch updated with main" } else { "Checking the result" }); t.put("watch", Value::Null); t.put("check", Value::Null); t.put("summary", text.trim()); if synced.is_none() { t.put("agentDoneAt", now()); } })?;
     let (folder, root) = (cwd_of(&t), folder_of(t.s("id")));
     let prev_main = t.t("syncedTo"); // main as it was brought in before this turn's sync
     let tree = if flow::task::is_agent_task(&t) && t.b("worktree") && Path::new(t.s("worktree")).exists() { t.t("worktree") } else { String::new() };

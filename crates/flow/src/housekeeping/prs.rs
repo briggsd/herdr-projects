@@ -104,8 +104,14 @@ fn poll_one(id: &str, pr: &str, j: &Value, via: &str) {
         // Only what the human wrote on it wakes the agent: the comments of the logged-in GitHub user, never anyone
         // else's (other people, review bots) and never the board's own review comments, which that same user posts.
         let human = { let u = gh_user(&root); if u.is_empty() { j.at("author").t("login") } else { u } };
+        // The task's agent posts as that same user too (its round notes): what was written before its last finish is
+        // its own, or was there when it finished, and is no news (fl-coord, 2026-10-26: FL-561 left approval over its
+        // agent's round-3 comment).
+        let done_at = t.i("agentDoneAt");
+        let own = |x: &Value| { let at = if x.b("createdAt") { x.s("createdAt") } else { x.s("submittedAt") };
+            done_at > 0 && chrono::DateTime::parse_from_rfc3339(at).map(|d| d.timestamp_millis() <= done_at + 60000).unwrap_or(false) };
         let others: Vec<&Value> = j.arr("comments").iter().chain(j.arr("reviews").iter().filter(|x| !x.s("body").trim().is_empty() || x.s("state") == "COMMENTED"))
-            .filter(|x| x.at("author").b("login") && x.at("author").t("login") == human && !board_comment(x.s("body"))).collect();
+            .filter(|x| x.at("author").b("login") && x.at("author").t("login") == human && !board_comment(x.s("body")) && !own(x)).collect();
         let mut keys: Vec<String> = others.iter().map(|x| {
             let idv = if x.b("id") { x.t("id") } else { x.t("url") };
             let at = if x.b("updatedAt") { x.t("updatedAt") } else { x.t("submittedAt") };
@@ -113,7 +119,9 @@ fn poll_one(id: &str, pr: &str, j: &Value, via: &str) {
         }).collect();
         keys.sort();
         let feedback = serde_json::to_string(&keys).unwrap_or_default();
-        let new_feedback = !others.is_empty() && feedback != (if t.has("prFeedbackSeen") { t.t("prFeedbackSeen") } else { "[]".into() });
+        // News is a comment not seen before; one gone from the list (now the agent's own, or deleted) is not.
+        let seen_before: Vec<String> = serde_json::from_str(&t.t("prFeedbackSeen")).unwrap_or_default();
+        let new_feedback = keys.iter().any(|k| !seen_before.contains(k));
         t.put("prFeedbackSeen", feedback);
         let decision = j.s("reviewDecision");
         let reason = if !failed.is_empty() { checks::failed_why(pr, &failed) }

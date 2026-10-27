@@ -96,7 +96,7 @@ pub fn pipeline(id: &str, g: &mut Guard, text: &str, keep_intent: bool, reason: 
             let s = sync::since_review(&tree, &head, &sync_r.map(|r| r.target.clone()).unwrap_or_default());
             let n = t.i("reviewRound");
             if sync::nothing_to_look_at(&s) {
-                super::shared::runner_log(id, &if s.arr("merges").is_empty() { format!("review: skipped, no commits since review {n}") } else { format!("review: skipped, only clean merges of main since review {n}") });
+                super::shared::runner_log(id, &if !s.arr("same").is_empty() { format!("review: skipped, the tree is unchanged since review {n} (message-only commits)") } else if s.arr("merges").is_empty() { format!("review: skipped, no commits since review {n}") } else { format!("review: skipped, only clean merges of main since review {n}") });
                 kept = Some(review); kept_how = Some(json!({ "from": head, "merges": s.arr("merges").len(), "resolved": [], "same": s.arr("merges").is_empty() }));
             } else if s.b("ok") && s.arr("own").is_empty() && s.arr("other").is_empty() {
                 // Only merges of main, some resolved by hand: the next review looks at those only (review_brief.rs).

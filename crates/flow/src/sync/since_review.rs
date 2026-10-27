@@ -7,7 +7,10 @@
 //!     A clean merge is never looked at, whatever files main's side changed: the check proves it;
 //!   - any other merge (of another branch, or of main when `target` is not known) is the branch's own work, all of
 //!     what it brought in (`other`);
+//!   - a commit that leaves the tree as its parent had it (an empty, message-only commit: REVIEW.md's message-only
+//!     gate round) changes nothing to look at (`same`); the coordinator checks its message;
 //!   - anything else is the branch's own work (`own`).
+//! A head whose tree is the reviewed commit's has nothing to look at either, however it got there.
 //! `ok` is false when the reviewed commit is not on that line any more (a rebase): then all of the change is reviewed.
 use crate::flow::git::head_of;
 use crate::json::*;
@@ -28,7 +31,7 @@ fn merge_of_main(dir: &Path, c: &str, ours: &str, theirs: &str) -> crate::err::R
     let look = !conflicts.is_empty() || !extra.is_empty();
     Ok(Some(json!({ "commit": c, "conflicts": conflicts, "extra": extra, "look": look })))
 }
-/// { ok, from, head, own: [commit], other: [commit], merges: [{ commit, conflicts, extra, look }], why }
+/// { ok, from, head, own: [commit], other: [commit], same: [commit], merges: [{ commit, conflicts, extra, look }], why }
 pub fn since_review(tree: &str, reviewed: &str, target: &str) -> Value {
     let no = |why: String| json!({ "ok": false, "why": why, "own": [], "merges": [] });
     if tree.is_empty() || reviewed.is_empty() { return no("the reviewed commit is not known".into()); }
@@ -39,19 +42,25 @@ pub fn since_review(tree: &str, reviewed: &str, target: &str) -> Value {
         if head == reviewed { return Ok(json!({ "ok": true, "from": reviewed, "head": head, "own": [], "merges": [] })); }
         if git_out(dir, &["merge-base", "--is-ancestor", reviewed, &head]).is_err() { return Ok(no("the branch no longer holds the reviewed commit".into())); }
         let chain: Vec<String> = git_out(dir, &["rev-list", "--first-parent", "--reverse", &format!("{reviewed}..{head}")])?.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
-        let (mut own, mut other, mut merges, mut prev) = (vec![], vec![], vec![], reviewed.to_string());
+        let tree_of = |c: &str| git_out(dir, &["rev-parse", &format!("{c}^{{tree}}")]).map(|x| x.trim().to_string()).unwrap_or_default();
+        let (mut own, mut other, mut same, mut merges, mut prev) = (vec![], vec![], vec![], vec![], reviewed.to_string());
         for c in &chain {
             let parents: Vec<String> = git_out(dir, &["show", "-s", "--format=%P", c])?.split_whitespace().map(String::from).collect();
             let of_main = parents.len() == 2 && parents[0] == prev && !target.is_empty() && git_out(dir, &["merge-base", "--is-ancestor", &parents[1], target]).is_ok();
             match if of_main { merge_of_main(dir, c, &parents[0], &parents[1])? } else { None } {
                 Some(m) => merges.push(m),
                 None if parents.len() > 1 => other.push(json!(c)), // all it brought in is the agent's to answer for
+                None if parents.len() == 1 && !tree_of(c).is_empty() && tree_of(c) == tree_of(&parents[0]) => same.push(json!(c)),
                 None => own.push(json!(c)),
             }
             prev = c.clone();
         }
         if chain.is_empty() || prev != head { return Ok(no("the reviewed commit is not on the branch's own line".into())); }
-        Ok(json!({ "ok": true, "from": reviewed, "head": head, "own": own, "other": other, "merges": merges }))
+        if !tree_of(&head).is_empty() && tree_of(&head) == tree_of(reviewed) {
+            // The same tree as reviewed: whatever came between, nothing in it is left to look at.
+            same.extend(own.drain(..)); same.extend(other.drain(..)); merges.clear();
+        }
+        Ok(json!({ "ok": true, "from": reviewed, "head": head, "own": own, "other": other, "same": same, "merges": merges }))
     };
     run().unwrap_or_else(|e| no(format!("git could not say ({})", one_line(&e.msg, 160))))
 }

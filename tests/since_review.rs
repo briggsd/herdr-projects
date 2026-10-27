@@ -26,6 +26,17 @@ fn since_review_lists_own_commits_and_the_merges_of_main_that_want_a_look() {
     // nothing since: kept
     let s = since(&reviewed, "");
     assert!(sw::sync::nothing_to_look_at(&s), "{s}"); assert_eq!(s.t("from"), reviewed);
+    // a message-only commit (the tree as it was): nothing to look at; nor is a change undone again
+    git(&dir, &["checkout", "-q", "-B", "t0", &reviewed]); git(&dir, &["commit", "-q", "--allow-empty", "-m", "gate: message only"]);
+    let s = since(&reviewed, "");
+    assert!(sw::sync::nothing_to_look_at(&s), "{s}"); assert_eq!((s.arr("own").len(), s.arr("same").len()), (0, 1));
+    write("c.txt", "tried\n"); commit("try"); write("c.txt", "one\n"); commit("undo");
+    let s = since(&reviewed, "");
+    assert!(sw::sync::nothing_to_look_at(&s), "{s}"); assert_eq!(s.arr("same").len(), 3);
+    write("c.txt", "kept\n"); let real = commit("real");
+    let s = since(&reviewed, ""); // a real change at the end: the change and its undoing are looked at with it
+    assert!(!sw::sync::nothing_to_look_at(&s)); assert_eq!((s.arr("own").len(), s.arr("own")[2].as_str(), s.arr("same").len()), (3, Some(real.as_str()), 1));
+    git(&dir, &["checkout", "-q", "task"]);
     // main moves apart from the change's files: a clean merge, nothing to look at
     git(&dir, &["checkout", "-q", "main"]); write("b.txt", "main\n"); let apart = commit("apart");
     git(&dir, &["checkout", "-q", "task"]); merge(&apart);

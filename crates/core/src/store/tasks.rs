@@ -31,9 +31,24 @@ pub fn one_line(text: &str, max: usize) -> String {
     t
 }
 fn task_file(id: &str) -> PathBuf { dir_of(id).join("task.json") }
+/// A task file as parsed the last time it was read, while it is the same file (inode, size, modification time): the
+/// keeper lists every task each second, and a long history (hundreds of done tasks) made that a steady third of a core.
+fn read_cached(file: &Path) -> Option<Obj> {
+    use std::os::unix::fs::MetadataExt;
+    use std::sync::{Mutex, OnceLock};
+    type Seen = std::collections::HashMap<PathBuf, ((u64, u64, i64, i64), Obj)>;
+    static SEEN: OnceLock<Mutex<Seen>> = OnceLock::new();
+    let m = fs::metadata(file).ok()?;
+    let key = (m.ino(), m.len(), m.mtime(), m.mtime_nsec());
+    let seen = SEEN.get_or_init(|| Mutex::new(Seen::new()));
+    if let Some((k, o)) = seen.lock().ok()?.get(file) { if *k == key { return Some(o.clone()); } }
+    let o = read_obj(file)?;
+    if let Ok(mut s) = seen.lock() { s.insert(file.to_path_buf(), (key, o.clone())); }
+    Some(o)
+}
 /// A task as it is on disk now, in the names of this version, or None.
 pub fn get(id: &str) -> Option<Task> {
-    let t = read_obj(&task_file(id))?;
+    let t = read_cached(&task_file(id))?;
     if !t.b("id") { return None; }
     Some(old_research::research_moved(migrate::moved_on_read(t)))
 }

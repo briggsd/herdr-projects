@@ -37,7 +37,7 @@ fn a_program_with_its_own_plan_mode_is_started_in_it_its_plan_taken_by_the_hook_
     // Its launch settings carry the hook that takes the plan (a test world starts agents without their hooks: asked for here).
     let token = sw::store::files::read_json(&sw::store::files::dir_of(&id).join("tokens.json")).unwrap().t("agent");
     let hooks = |plan: bool| -> Value {
-        let h = sw::agents::adapter::Hook { shim: "/bin/board".into(), id: id.clone(), role: "agent".into(), token: token.clone(), round: 0, dir: w.base.clone(), plan };
+        let h = sw::agents::adapter::Hook { shim: "/bin/board".into(), id: id.clone(), role: "agent".into(), token: token.clone(), round: 0, dir: w.base.clone(), plan, env: vec![] };
         let a = sw::agents::adapter::hook_args("claude", &h).unwrap().unwrap();
         let file = &a[a.iter().position(|x| x == "--settings").unwrap() + 1];
         sw::store::files::read_json(std::path::Path::new(file)).unwrap().at("hooks").clone()
@@ -48,6 +48,12 @@ fn a_program_with_its_own_plan_mode_is_started_in_it_its_plan_taken_by_the_hook_
     assert_eq!(pre.at("hooks")[0].s("command"), format!("'/bin/board' 'plan-written' '--id' 'proj/1' '--token' '{token}'"));
     assert!(!pre.at("hooks")[0].b("async"));
     assert!(hooks(false).at("PreToolUse").is_null(), "only while the plan step is open");
+    // worker.claudeEnv rides in the same launch settings, where it outranks the user's own (their telemetry, say)
+    let h = sw::agents::adapter::Hook { shim: "/bin/board".into(), id: id.clone(), role: "reviewer".into(), token: token.clone(), round: 1, dir: w.base.clone(), plan: false, env: vec![("OTEL_LOGS_EXPORTER".into(), "otlp".into())] };
+    let a = sw::agents::adapter::hook_args("claude", &h).unwrap().unwrap();
+    let s = sw::store::files::read_json(std::path::Path::new(&a[a.iter().position(|x| x == "--settings").unwrap() + 1])).unwrap();
+    assert_eq!((s.at("env").clone(), s.at("hooks").at("Stop").is_array()), (json!({ "OTEL_LOGS_EXPORTER": "otlp" }), true));
+    assert!(hooks(false).at("env").is_null());
     // The hook: a wrong token or no plan lets the tool through; the plan is saved, and the tool is refused. (What it
     // tells the agent goes to stderr, which a test in this process does not read: SAVED is that text.)
     use sw::plan::presented::presented;

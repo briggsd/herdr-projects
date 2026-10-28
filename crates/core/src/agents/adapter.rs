@@ -11,7 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// The hook's call back into the board, at each turn end.
-pub struct Hook { pub shim: String, pub id: String, pub role: String, pub token: String, pub round: i64, pub dir: PathBuf, pub plan: bool }
+pub struct Hook { pub shim: String, pub id: String, pub role: String, pub token: String, pub round: i64, pub dir: PathBuf, pub plan: bool, pub env: Vec<(String, String)> }
 fn hook_command(h: &Hook) -> Vec<String> {
     let mut c = vec![h.shim.clone(), "turn-ended".into(), "--id".into(), h.id.clone(), "--role".into(), h.role.clone(), "--token".into(), h.token.clone()];
     if h.role == "reviewer" { c.extend(["--round".to_string(), h.round.to_string()]); }
@@ -38,7 +38,10 @@ pub fn hook_args(kind: &str, h: &Hook) -> Res<Option<Vec<String>>> {
                 let plan_cmd = [h.shim.as_str(), "plan-written", "--id", &h.id, "--token", &h.token].iter().map(|s| shq(s)).collect::<Vec<_>>().join(" ");
                 hooks.put("PreToolUse", json!([{ "matcher": "ExitPlanMode", "hooks": [{ "type": "command", "command": plan_cmd }] }]));
             }
-            write_private(&file, &json!({ "hooks": hooks }).to_string())?;
+            let mut settings = obj(json!({ "hooks": hooks }));
+            // `worker.claudeEnv`: the launch's settings file outranks the user's, so this is where it can win.
+            if !h.env.is_empty() { settings.put("env", Value::Object(h.env.iter().map(|(k, v)| (k.clone(), json!(v))).collect())); }
+            write_private(&file, &Value::Object(settings).to_string())?;
             Ok(Some(vec!["--settings".into(), file.display().to_string()]))
         }
         // Codex runs one `notify` program at each turn end. Given at launch it would replace one the user configured,

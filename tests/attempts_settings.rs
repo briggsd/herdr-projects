@@ -98,7 +98,7 @@ fn delegate_an_automation_the_coordinator_and_the_settings_page() {
     for want in ["\"do this one three times and let me choose\"", "board delegate <id> --attempts.by 3", "board pick <id> <letter>"] { assert!(r.contains(want), "{want}"); }
     // the settings page
     let id = w.add("T");
-    let mut b = open(&w.root, 45); b.s.sel = id.clone(); b.load();
+    let mut b = open(&w.root, 46); b.s.sel = id.clone(); b.load();
     b.press(&["ctrl+e"]);
     let n = sw::board::update::edit::rows(&b.s).iter().position(|r| r.s("name") == "attempts.by").unwrap();
     let go = |b: &mut common::board::Board, at: usize| b.s.editing.as_mut().unwrap().at = at;

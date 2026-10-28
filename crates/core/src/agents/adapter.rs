@@ -23,6 +23,20 @@ fn write_private(file: &Path, text: &str) -> Res<()> {
     std::io::Write::write_all(&mut f, text.as_bytes())?;
     Ok(())
 }
+/// `board.claudeEnv`'s `NAME=value` pairs, read as an agent starts.
+pub fn claude_env() -> Vec<(String, String)> {
+    crate::store::settings::values::list_of(&crate::store::settings::lookup::setting("board.claudeEnv", None)).into_iter().filter_map(|p| p.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))).filter(|(k, _)| !k.is_empty()).collect()
+}
+fn env_obj(env: &[(String, String)]) -> Value { Value::Object(env.iter().map(|(k, v)| (k.clone(), json!(v))).collect()) }
+/// For a Claude launch that has no settings file of its own (the Coordinator): one with `board.claudeEnv` in it, in
+/// `dir`. Nothing when the setting is empty.
+pub fn env_args(kind: &str, dir: &Path, name: &str) -> Res<Vec<String>> {
+    let env = claude_env();
+    if kind != "claude" || env.is_empty() { return Ok(vec![]); }
+    let file = dir.join(name);
+    write_private(&file, &json!({ "env": env_obj(&env) }).to_string())?;
+    Ok(vec!["--settings".into(), file.display().to_string()])
+}
 /// Launch arguments that make the program call `turn-ended` at every turn end. None: no hook for it here.
 pub fn hook_args(kind: &str, h: &Hook) -> Res<Option<Vec<String>>> {
     match kind {
@@ -39,8 +53,8 @@ pub fn hook_args(kind: &str, h: &Hook) -> Res<Option<Vec<String>>> {
                 hooks.put("PreToolUse", json!([{ "matcher": "ExitPlanMode", "hooks": [{ "type": "command", "command": plan_cmd }] }]));
             }
             let mut settings = obj(json!({ "hooks": hooks }));
-            // `worker.claudeEnv`: the launch's settings file outranks the user's, so this is where it can win.
-            if !h.env.is_empty() { settings.put("env", Value::Object(h.env.iter().map(|(k, v)| (k.clone(), json!(v))).collect())); }
+            // `board.claudeEnv`: the launch's settings file outranks the user's, so this is where it can win.
+            if !h.env.is_empty() { settings.put("env", env_obj(&h.env)); }
             write_private(&file, &Value::Object(settings).to_string())?;
             Ok(Some(vec!["--settings".into(), file.display().to_string()]))
         }

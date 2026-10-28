@@ -97,7 +97,8 @@ fn ensure(api: &Herdr, co: &Co) -> Res<(Obj, bool)> {
     let resume = if c.b("run") && c.b("session") && !adapter::resume_args(&k, "x").is_empty() && saved { Some(c.t("session")) } else { None };
     let session = if resume.is_none() { adapter::new_session(&k) } else { None };
     // The rules ride on no launch flag: the program reads them from its folder, so they are told once.
-    let (reads, launch) = put_rules(co, &k, &text)?;
+    let (reads, mut launch) = put_rules(co, &k, &text)?;
+    launch.extend(adapter::env_args(&k, &home(co), "claude-env.json")?); // board.claudeEnv
     if co.is_top() { let _ = std::fs::remove_file(dir_of(co).join("rules.md")); }
     installed::pre_trust(&k, &home(co), if run.b("access") { run.s("access") } else { "full" });
     let taken: Vec<String> = api.agents()?.iter().filter(|x| x.s("pane_id") != pane.s("pane_id")).map(|x| x.t("name")).collect();

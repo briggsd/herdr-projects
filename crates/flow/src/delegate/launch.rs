@@ -26,10 +26,6 @@ pub fn agent_name(t: &Obj, taken: &[String]) -> String {
     let h = sha1_smol::Sha1::from(format!("{}:{}:{}", t.s("id"), t.s("root"), now())).digest().to_string();
     format!("{base}-{}", &h[..4])
 }
-/// `worker.claudeEnv`'s `NAME=value` pairs, read as the agent starts.
-fn claude_env(t: &Task) -> Vec<(String, String)> {
-    crate::store::settings::values::list_of(work(Some(t)).at("worker.claudeEnv")).into_iter().filter_map(|p| p.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))).filter(|(k, _)| !k.is_empty()).collect()
-}
 pub struct Extras { pub hook: Vec<String>, pub rules: Vec<String>, pub hooked: bool, pub session: Option<String>, pub version: String }
 /// The launch arguments that are the board's own: the turn-end hook (with a new secret token) and the standing rules.
 /// Nothing is written to the user's own agent settings.
@@ -38,7 +34,7 @@ pub fn launch_extras(t: &Task, role: &str, kind: &str, round: i64, standing: &st
     set_token(t.s("id"), role, &token, round)?;
     let mut hook = None;
     if installed::hook_usable(kind) {
-        let h = adapter::Hook { shim: flow::send::shim().display().to_string(), id: t.t("id"), role: role.into(), token, round, dir: dir_of(t.s("id")), plan: role == "agent" && plan::plan_args(t, kind).is_some(), env: claude_env(t) };
+        let h = adapter::Hook { shim: flow::send::shim().display().to_string(), id: t.t("id"), role: role.into(), token, round, dir: dir_of(t.s("id")), plan: role == "agent" && plan::plan_args(t, kind).is_some(), env: adapter::claude_env() };
         hook = adapter::hook_args(kind, &h).ok().flatten();
     }
     let session = if resume.is_none() { adapter::new_session(kind) } else { None };

@@ -48,12 +48,20 @@ fn a_program_with_its_own_plan_mode_is_started_in_it_its_plan_taken_by_the_hook_
     assert_eq!(pre.at("hooks")[0].s("command"), format!("'/bin/board' 'plan-written' '--id' 'proj/1' '--token' '{token}'"));
     assert!(!pre.at("hooks")[0].b("async"));
     assert!(hooks(false).at("PreToolUse").is_null(), "only while the plan step is open");
-    // worker.claudeEnv rides in the same launch settings, where it outranks the user's own (their telemetry, say)
+    // board.claudeEnv rides in the same launch settings, where it outranks the user's own (their telemetry, say)
     let h = sw::agents::adapter::Hook { shim: "/bin/board".into(), id: id.clone(), role: "reviewer".into(), token: token.clone(), round: 1, dir: w.base.clone(), plan: false, env: vec![("OTEL_LOGS_EXPORTER".into(), "otlp".into())] };
     let a = sw::agents::adapter::hook_args("claude", &h).unwrap().unwrap();
     let s = sw::store::files::read_json(std::path::Path::new(&a[a.iter().position(|x| x == "--settings").unwrap() + 1])).unwrap();
     assert_eq!((s.at("env").clone(), s.at("hooks").at("Stop").is_array()), (json!({ "OTEL_LOGS_EXPORTER": "otlp" }), true));
     assert!(hooks(false).at("env").is_null());
+    // and with no settings file of its own (the Coordinator), a file with just that env, from the board's setting
+    assert!(sw::agents::adapter::env_args("claude", &w.base, "claude-env.json").unwrap().is_empty(), "none by default");
+    sw::store::settings::change::set_value("board.claudeEnv", &json!(["OTEL_LOGS_EXPORTER=otlp", "OTEL_LOG_USER_PROMPTS=1"]), &sw::store::settings::lookup::Scope::you()).unwrap();
+    assert_eq!(sw::agents::adapter::claude_env(), vec![("OTEL_LOGS_EXPORTER".to_string(), "otlp".to_string()), ("OTEL_LOG_USER_PROMPTS".to_string(), "1".to_string())]);
+    let a = sw::agents::adapter::env_args("claude", &w.base, "claude-env.json").unwrap();
+    assert_eq!(sw::store::files::read_json(std::path::Path::new(&a[1])).unwrap().at("env"), &json!({ "OTEL_LOGS_EXPORTER": "otlp", "OTEL_LOG_USER_PROMPTS": "1" }));
+    assert!(sw::agents::adapter::env_args("codex", &w.base, "claude-env.json").unwrap().is_empty(), "Claude only");
+    sw::store::settings::change::set_value("board.claudeEnv", &json!("none"), &sw::store::settings::lookup::Scope::you()).unwrap();
     // The hook: a wrong token or no plan lets the tool through; the plan is saved, and the tool is refused. (What it
     // tells the agent goes to stderr, which a test in this process does not read: SAVED is that text.)
     use sw::plan::presented::presented;

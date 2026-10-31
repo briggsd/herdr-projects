@@ -1,8 +1,8 @@
 //! The pull request opens from the agent's latest closing note, once that note is a pull request body
 //! (`pr.bodyNeeds`, `pr.bodyRefuses`): a note without the words it needs, or with words that say it is not one yet (a
 //! note written before the pull request existed, FL-306), is refused once. The agent is told to write its closing note
-//! as the body and end its turn again; its next note opens the pull request, as it is. A last message that is not a
-//! body, beside a closing-note.md from the same turn that is, gives way to the note.
+//! as the body and end its turn again; its next note opens the pull request, as it is. A closing-note.md from the same
+//! turn that is a body wins over the turn's last message, even one that passes as a body too (FLB-99).
 use super::shared::runner_log;
 use crate::err::Res;
 use crate::json::*;
@@ -14,13 +14,14 @@ use std::path::Path;
 
 fn words(ch: &Obj, key: &str) -> Vec<String> { list_of(ch.at(key)).into_iter().filter(|w| w != "none" && !w.trim().is_empty()).collect() }
 
-/// The body: the turn's last message, or its closing-note.md when the message is not a body and the note is (the
-/// message only says the note was written, FL-315). runner.log says `pr body: from closing-note.md`.
+/// The body: the turn's closing-note.md when it is a body, else the turn's last message. A short last message that
+/// still passes as a body ("Done. Checked: …") no longer takes the place of the note's whole body (FLB-99; the
+/// message that only says the note was written, FL-315, gave way already). runner.log says `pr body: from closing-note.md`.
 pub fn latest(id: &str, t: &Task, ch: &Obj, said: String) -> String {
     let note = t.t("noteSaid");
     if note.trim().is_empty() || note == said || words(ch, "pr.bodyNeeds").is_empty() && words(ch, "pr.bodyRefuses").is_empty() { return said; }
     let plain = |s: &str| { let mut u = t.clone(); u.put("prBodyAsked", false); refused(&u, ch, s) };
-    if plain(&said).is_some() && plain(&note).is_none() { runner_log(id, "pr body: from closing-note.md"); return note; }
+    if plain(&note).is_none() { runner_log(id, "pr body: from closing-note.md"); return note; }
     said
 }
 

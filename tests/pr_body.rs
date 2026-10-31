@@ -61,6 +61,16 @@ fn a_last_message_that_is_not_a_body_gives_way_to_the_turns_closing_note() {
 }
 
 #[test]
+fn a_closing_note_that_is_a_body_wins_over_a_short_last_message_that_passes_too() {
+    // FLB-99: "Done … Checked: …" as the last message took the place of the note's whole body
+    let note = "Fixed it.\n\nChecked: tools/check.sh passes.\n\nShots: none.\n\nAlso noticed: nothing.";
+    let (body, log, told) = opened_by("claude", json!([{ "files": { "f.txt": "v1\n" }, "commit": "v1", "note": note, "ends": "claude-short-checked-made", "hook": true }]));
+    assert_eq!(body, note);
+    assert!(log.contains("pr body: from closing-note.md") && !log.contains("body refused"), "{log}");
+    assert_eq!(told.len(), 1, "{told:?}");
+}
+
+#[test]
 fn neither_a_body_the_message_is_refused_as_before() {
     let (body, log, told) = opened_by("claude", json!([
         { "files": { "f.txt": "v1\n" }, "commit": "v1", "note": "Fixed it.", "ends": "claude-finished-made", "hook": true },
